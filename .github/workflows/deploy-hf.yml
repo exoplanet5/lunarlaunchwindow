@@ -1,0 +1,50 @@
+name: Deploy coast_tool to Hugging Face Space
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'coast_tool/**'
+      - '.github/workflows/deploy-hf.yml'
+  workflow_dispatch:
+
+env:
+  HF_SPACE: exoplanet5/lunar-launch-window
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assemble static site
+        run: |
+          mkdir -p _space
+          cp -r coast_tool/* _space/
+          rm -f _space/启动.command          # Space 上不需要本地启动脚本
+          mv _space/README.md _space/ABOUT.md 2>/dev/null || true
+          # Space 根 README 必须带 YAML front matter (sdk: static)
+          cat > _space/README.md <<'EOF'
+          ---
+          title: Lunar Launch Window Calculator
+          emoji: 🌙
+          colorFrom: indigo
+          colorTo: gray
+          sdk: static
+          pinned: false
+          license: mit
+          ---
+          月球转移发射窗口计算器 · 停泊轨道滑行方案 (变射向+变滑行时间)。
+          纯前端静态页面, 源码与验证脚本见 GitHub 仓库。
+          EOF
+
+      - name: Push to Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          pip install -q -U "huggingface_hub[cli]"
+          hf upload "$HF_SPACE" _space . \
+            --repo-type space \
+            --commit-message "deploy ${GITHUB_SHA::7}" \
+            --token "$HF_TOKEN" \
+            --delete "*"

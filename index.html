@@ -1,0 +1,1713 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>月球直接转移轨道发射窗口计算器</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: -apple-system, 'Helvetica Neue', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: #0a0a1a;
+    color: #e0e0e0;
+    overflow: hidden;
+    height: 100vh;
+}
+
+#app {
+    display: grid;
+    grid-template-columns: 300px 1fr 320px;
+    grid-template-rows: 56px 1fr;
+    height: 100vh;
+}
+
+/* Header */
+#header {
+    grid-column: 1 / -1;
+    background: linear-gradient(135deg, #0d1b2a 0%, #1b2838 100%);
+    border-bottom: 1px solid #2a3a4a;
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    gap: 16px;
+}
+#header h1 {
+    font-size: 18px;
+    font-weight: 600;
+    color: #f0f0f0;
+    letter-spacing: 1px;
+}
+#header .subtitle {
+    font-size: 12px;
+    color: #8899aa;
+}
+
+/* Left Panel - Controls */
+#controls {
+    background: #0d1117;
+    border-right: 1px solid #1e2d3d;
+    padding: 20px;
+    overflow-y: auto;
+}
+.panel-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #58a6ff;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #1e2d3d;
+}
+.control-group {
+    margin-bottom: 20px;
+}
+.control-group label {
+    display: block;
+    font-size: 12px;
+    color: #8b949e;
+    margin-bottom: 6px;
+    font-weight: 500;
+}
+.control-group select,
+.control-group input[type="date"],
+.control-group input[type="number"],
+.control-group input[type="range"] {
+    width: 100%;
+    padding: 8px 12px;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    color: #e0e0e0;
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s;
+}
+.control-group select:focus,
+.control-group input:focus {
+    border-color: #58a6ff;
+}
+.control-group input[type="range"] {
+    padding: 0;
+    margin-top: 4px;
+    -webkit-appearance: none;
+    height: 6px;
+    border-radius: 3px;
+    background: #30363d;
+    border: none;
+}
+.control-group input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #58a6ff;
+    cursor: pointer;
+}
+.range-value {
+    font-size: 13px;
+    color: #58a6ff;
+    text-align: right;
+    margin-top: 4px;
+}
+.site-info {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 10px 12px;
+    margin-top: 8px;
+    font-size: 12px;
+    line-height: 1.8;
+}
+.site-info span { color: #7ee787; }
+.btn-calculate {
+    width: 100%;
+    padding: 10px;
+    background: linear-gradient(135deg, #238636, #2ea043);
+    border: none;
+    border-radius: 6px;
+    color: white;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    margin-top: 8px;
+}
+.btn-calculate:hover { opacity: 0.9; }
+
+.view-controls {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+}
+.view-btn {
+    flex: 1;
+    min-width: 60px;
+    padding: 6px 4px;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 4px;
+    color: #8b949e;
+    font-size: 11px;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.2s;
+}
+.view-btn:hover, .view-btn.active {
+    background: #1f2937;
+    color: #58a6ff;
+    border-color: #58a6ff;
+}
+.toggle-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.toggle-group label {
+    margin: 0;
+    font-size: 12px;
+    color: #8b949e;
+    cursor: pointer;
+    user-select: none;
+}
+.toggle-group input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: #58a6ff;
+    cursor: pointer;
+}
+
+/* Viewport */
+#viewport {
+    position: relative;
+    background: #0a0a1a;
+    overflow: hidden;
+}
+#viewport canvas { display: block; }
+
+#viewport-overlay {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    pointer-events: none;
+    font-size: 11px;
+    color: #556677;
+    line-height: 1.6;
+}
+
+/* Right Panel */
+#info-panel {
+    background: #0d1117;
+    border-left: 1px solid #1e2d3d;
+    padding: 20px;
+    overflow-y: auto;
+}
+
+.info-section {
+    margin-bottom: 24px;
+}
+.info-section h3 {
+    font-size: 13px;
+    font-weight: 600;
+    color: #58a6ff;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 0;
+    border-bottom: 1px solid #161b22;
+    font-size: 13px;
+}
+.info-row .label { color: #8b949e; }
+.info-row .value { color: #e0e0e0; font-weight: 500; font-variant-numeric: tabular-nums; }
+.info-row .value.highlight { color: #f0883e; }
+
+/* Moon Phase Display */
+#moon-phase-display {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px;
+    background: #161b22;
+    border-radius: 8px;
+    margin-bottom: 12px;
+}
+#moon-phase-canvas {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+}
+.moon-phase-text {
+    flex: 1;
+}
+.moon-phase-text .phase-name {
+    font-size: 15px;
+    color: #e0e0e0;
+    font-weight: 600;
+}
+.moon-phase-text .phase-detail {
+    font-size: 12px;
+    color: #8b949e;
+    margin-top: 4px;
+}
+
+/* Launch Window highlight */
+.launch-window-box {
+    background: linear-gradient(135deg, #1a1a2e, #16213e);
+    border: 1px solid #f0883e;
+    border-radius: 8px;
+    padding: 12px;
+    margin-top: 8px;
+}
+.launch-window-box .window-time {
+    font-size: 18px;
+    color: #f0883e;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+.window-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    padding: 4px 8px;
+    transition: all 0.2s;
+    display: block;
+}
+.window-btn:hover {
+    border-color: #f0883e;
+    background: rgba(240,136,62,0.1);
+}
+.window-btn.active {
+    border-color: #f0883e;
+    background: rgba(240,136,62,0.15);
+    box-shadow: 0 0 6px rgba(240,136,62,0.3);
+}
+.launch-window-box .window-label {
+    font-size: 11px;
+    color: #8b949e;
+    margin-bottom: 4px;
+}
+.window-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+/* Legend */
+.legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 12px;
+}
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: #8b949e;
+}
+.legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.legend-line {
+    width: 16px;
+    height: 2px;
+    flex-shrink: 0;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #484f58; }
+</style>
+</head>
+<body>
+
+<div id="app">
+
+<div id="header">
+    <h1>月球直接转移轨道发射窗口计算器</h1>
+    <span class="subtitle">Direct Lunar Transfer Launch Window Calculator</span>
+</div>
+
+<!-- Left Panel: Controls -->
+<div id="controls">
+    <div class="panel-title">发射参数</div>
+
+    <div class="control-group">
+        <label>发射场 Launch Site</label>
+        <select id="launch-site">
+            <option value="wenchang">文昌 Wenchang</option>
+            <option value="xichang">西昌 Xichang</option>
+            <option value="ksc">KSC Kennedy</option>
+        </select>
+        <div class="site-info" id="site-info">
+            <div>纬度: <span id="site-lat">19.614°N</span></div>
+            <div>经度: <span id="site-lon">110.951°E</span></div>
+        </div>
+    </div>
+
+    <div class="control-group">
+        <label>发射日期 Launch Date</label>
+        <input type="date" id="launch-date">
+    </div>
+
+    <div class="control-group">
+        <label>停泊轨道高度 Parking Orbit (km)</label>
+        <input type="number" id="parking-alt" value="200" min="150" max="500" step="10">
+    </div>
+
+    <div class="control-group">
+        <label>转移飞行时间 Transfer Time (天)</label>
+        <input type="range" id="transfer-time" min="3.0" max="6.0" step="0.1" value="4.5">
+        <div class="range-value" id="transfer-time-value">4.5 天</div>
+    </div>
+
+    <div class="control-group">
+        <button class="btn-calculate" id="btn-calc">计算发射窗口</button>
+    </div>
+
+    <div class="panel-title" style="margin-top: 20px;">视图选项</div>
+
+    <div class="control-group">
+        <label>视角预设</label>
+        <div class="view-controls">
+            <button class="view-btn active" data-view="default">默认</button>
+            <button class="view-btn" data-view="top">俯视</button>
+            <button class="view-btn" data-view="side">侧视</button>
+            <button class="view-btn" data-view="earth">近地</button>
+        </div>
+    </div>
+
+    <div class="control-group">
+        <div class="toggle-group">
+            <input type="checkbox" id="show-ecliptic">
+            <label for="show-ecliptic">黄道面 Ecliptic Plane</label>
+        </div>
+        <div class="toggle-group">
+            <input type="checkbox" id="show-equator">
+            <label for="show-equator">赤道面 Equatorial Plane</label>
+        </div>
+        <div class="toggle-group">
+            <input type="checkbox" id="show-lunar-plane" checked>
+            <label for="show-lunar-plane">白道面 Lunar Orbital Plane</label>
+        </div>
+        <div class="toggle-group">
+            <input type="checkbox" id="show-transfer" checked>
+            <label for="show-transfer">转移轨道 Transfer Orbit</label>
+        </div>
+        <div class="toggle-group">
+            <input type="checkbox" id="show-labels" checked>
+            <label for="show-labels">标签 Labels</label>
+        </div>
+        <div class="toggle-group">
+            <input type="checkbox" id="show-shadows" checked>
+            <label for="show-shadows">本影锥 Shadow Cones</label>
+        </div>
+    </div>
+
+    <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#4488cc"></div>地球</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#aaa"></div>月球</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#22cc66"></div>发射场</div>
+        <div class="legend-item"><div class="legend-line" style="background:#f0883e"></div>转移轨道</div>
+        <div class="legend-item"><div class="legend-line" style="background:#445566"></div>月球轨道</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#f0883e; opacity:0.4"></div>到达位置</div>
+        <div class="legend-item"><div class="legend-line" style="background:rgba(100,150,255,0.4)"></div>黄道面</div>
+        <div class="legend-item"><div class="legend-line" style="background:rgba(204,170,68,0.4)"></div>白道面</div>
+        <div class="legend-item"><div class="legend-line" style="background:rgba(100,255,150,0.3)"></div>赤道面</div>
+    </div>
+</div>
+
+<!-- Center: 3D Viewport -->
+<div id="viewport">
+    <div id="viewport-overlay">
+        鼠标拖拽旋转 | 滚轮缩放 | 右键平移
+    </div>
+</div>
+
+<!-- Right Panel: Results -->
+<div id="info-panel">
+    <div class="panel-title">月相 Moon Phase</div>
+    <div id="moon-phase-display">
+        <canvas id="moon-phase-canvas" width="60" height="60"></canvas>
+        <div class="moon-phase-text">
+            <div class="phase-name" id="phase-name">--</div>
+            <div class="phase-detail" id="phase-detail">光照 --</div>
+        </div>
+    </div>
+
+    <div class="info-section">
+        <h3>发射窗口 Launch Window</h3>
+        <div class="info-row"><span class="label">发射方位角</span><span class="value" id="launch-az">--</span></div>
+        <div class="info-row"><span class="label">当地时区</span><span class="value" id="window-tz">CST (UTC+8)</span></div>
+        <div class="launch-window-box">
+            <div class="window-pair">
+                <div>
+                    <div class="window-label" id="window-1-label">窗口 1</div>
+                    <button class="window-time window-btn" id="window-1" title="点击旋转地球至此窗口">--:--</button>
+                </div>
+                <div>
+                    <div class="window-label" id="window-2-label">窗口 2</div>
+                    <button class="window-time window-btn" id="window-2" title="点击旋转地球至此窗口">--:--</button>
+                </div>
+            </div>
+        </div>
+        <div class="info-row" style="margin-top:8px"><span class="label">窗口宽度</span><span class="value" id="window-width">--</span></div>
+    </div>
+
+    <div class="info-section">
+        <h3>到达参数 Arrival</h3>
+        <div class="info-row"><span class="label">到达日期</span><span class="value" id="arrival-date">--</span></div>
+        <div class="info-row"><span class="label">月球赤纬</span><span class="value" id="arrival-dec">--</span></div>
+        <div class="info-row"><span class="label">月球距离</span><span class="value" id="arrival-dist">--</span></div>
+    </div>
+
+    <div class="info-section">
+        <h3>转移轨道 Transfer Orbit</h3>
+        <div class="info-row"><span class="label">半长轴 a</span><span class="value" id="orbit-sma">--</span></div>
+        <div class="info-row"><span class="label">偏心率 e</span><span class="value" id="orbit-ecc">--</span></div>
+        <div class="info-row"><span class="label">白道倾角(赤道)</span><span class="value" id="orbit-inc">--</span></div>
+        <div class="info-row"><span class="label">TLI ΔV</span><span class="value highlight" id="orbit-dv">--</span></div>
+        <div class="info-row"><span class="label">LOI ΔV</span><span class="value" id="orbit-loi">--</span></div>
+        <div class="info-row"><span class="label">C3</span><span class="value" id="orbit-c3">--</span></div>
+    </div>
+
+    <div class="info-section">
+        <h3>月球位置 Moon Position</h3>
+        <div class="info-row"><span class="label">黄经 λ</span><span class="value" id="moon-lon">--</span></div>
+        <div class="info-row"><span class="label">黄纬 β</span><span class="value" id="moon-lat">--</span></div>
+        <div class="info-row"><span class="label">赤经 RA</span><span class="value" id="moon-ra">--</span></div>
+        <div class="info-row"><span class="label">赤纬 Dec</span><span class="value" id="moon-dec">--</span></div>
+        <div class="info-row"><span class="label">距离</span><span class="value" id="moon-dist">--</span></div>
+        <div class="info-row"><span class="label">白道倾角(黄道)</span><span class="value" id="lunar-inc">5.145°</span></div>
+        <div class="info-row"><span class="label">升交点黄经 Ω</span><span class="value" id="lunar-node">--</span></div>
+        <div class="info-row"><span class="label">升交点赤经</span><span class="value" id="lunar-raan-eq">--</span></div>
+    </div>
+</div>
+
+</div>
+
+<!-- Three.js -->
+<script type="importmap">
+{
+    "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ===== Constants =====
+const DEG = Math.PI / 180;
+const MU_EARTH = 398600.4418;  // km^3/s^2
+const R_EARTH = 6371;          // km
+const OBLIQUITY = 23.4393 * DEG;
+
+const LAUNCH_SITES = {
+    wenchang: { name: '文昌', lat: 19.614, lon: 110.951, tz: 8,  tzName: 'CST (UTC+8)' },
+    xichang:  { name: '西昌', lat: 28.247, lon: 102.027, tz: 8,  tzName: 'CST (UTC+8)' },
+    ksc:      { name: 'KSC',  lat: 28.573, lon: -80.649, tz: -5, tzName: 'EST (UTC-5)' }
+};
+
+// ===== Orbital Mechanics =====
+function julianDate(date) {
+    const y = date.getUTCFullYear();
+    const m = date.getUTCMonth() + 1;
+    const d = date.getUTCDate();
+    const ut = date.getUTCHours() + date.getUTCMinutes()/60 + date.getUTCSeconds()/3600;
+
+    let jy = y, jm = m;
+    if (m <= 2) { jy -= 1; jm += 12; }
+    const A = Math.floor(jy / 100);
+    const B = 2 - A + Math.floor(A / 4);
+    return Math.floor(365.25 * (jy + 4716)) + Math.floor(30.6001 * (jm + 1)) + d + ut/24 + B - 1524.5;
+}
+
+function mod360(x) { return ((x % 360) + 360) % 360; }
+
+function getMoonPosition(jd) {
+    const T = (jd - 2451545.0) / 36525;
+    // Mean elements (degrees)
+    let Lp = mod360(218.3165 + 481267.8813 * T);
+    let D  = mod360(297.8502 + 445267.1115 * T);
+    let M  = mod360(357.5291 + 35999.0503 * T);
+    let Mp = mod360(134.9634 + 477198.8676 * T);
+    let F  = mod360(93.2720 + 483202.0175 * T);
+
+    // Longitude correction (degrees)
+    const dL = 6.289 * Math.sin(Mp * DEG)
+             + 1.274 * Math.sin((2*D - Mp) * DEG)
+             + 0.658 * Math.sin(2*D * DEG)
+             + 0.214 * Math.sin(2*Mp * DEG)
+             - 0.186 * Math.sin(M * DEG)
+             - 0.114 * Math.sin(2*F * DEG)
+             + 0.059 * Math.sin((2*D - 2*Mp) * DEG)
+             + 0.057 * Math.sin((2*D - M - Mp) * DEG);
+
+    // Latitude correction (degrees)
+    const dB = 5.128 * Math.sin(F * DEG)
+             + 0.281 * Math.sin((Mp + F) * DEG)
+             + 0.278 * Math.sin((Mp - F) * DEG)
+             + 0.173 * Math.sin((2*D - F) * DEG)
+             + 0.055 * Math.sin((2*D - Mp + F) * DEG)
+             + 0.046 * Math.sin((2*D - Mp - F) * DEG);
+
+    // Distance correction (km)
+    const dR = -20905 * Math.cos(Mp * DEG)
+             - 3699 * Math.cos((2*D - Mp) * DEG)
+             - 2956 * Math.cos(2*D * DEG)
+             - 570 * Math.cos(2*Mp * DEG)
+             + 246 * Math.cos((2*Mp - 2*D) * DEG);
+
+    const lon = mod360(Lp + dL); // ecliptic longitude (deg)
+    const lat = dB;               // ecliptic latitude (deg)
+    const dist = 385001 + dR;     // km
+
+    return { lon, lat, dist };
+}
+
+function getSunLongitude(jd) {
+    const n = jd - 2451545.0;
+    const L = mod360(280.460 + 0.9856474 * n);
+    const g = mod360(357.528 + 0.9856003 * n);
+    return mod360(L + 1.915 * Math.sin(g * DEG) + 0.020 * Math.sin(2*g * DEG));
+}
+
+function eclipticToEquatorial(lon, lat) {
+    const lonR = lon * DEG, latR = lat * DEG;
+    const ra = Math.atan2(
+        Math.sin(lonR) * Math.cos(OBLIQUITY) - Math.tan(latR) * Math.sin(OBLIQUITY),
+        Math.cos(lonR)
+    );
+    const dec = Math.asin(
+        Math.sin(latR) * Math.cos(OBLIQUITY) + Math.cos(latR) * Math.sin(OBLIQUITY) * Math.sin(lonR)
+    );
+    return { ra: ((ra / DEG) % 360 + 360) % 360, dec: dec / DEG };
+}
+
+function eclipticToCartesian(lon, lat, dist) {
+    const lonR = lon * DEG, latR = lat * DEG;
+    return {
+        x: dist * Math.cos(latR) * Math.cos(lonR),
+        y: dist * Math.cos(latR) * Math.sin(lonR),
+        z: dist * Math.sin(latR)
+    };
+}
+
+function eclipticToEquatorialXYZ(ec) {
+    return {
+        x: ec.x,
+        y: ec.y * Math.cos(OBLIQUITY) - ec.z * Math.sin(OBLIQUITY),
+        z: ec.y * Math.sin(OBLIQUITY) + ec.z * Math.cos(OBLIQUITY)
+    };
+}
+
+function greenwichSiderealTime(jd) {
+    const T = (jd - 2451545.0) / 36525;
+    let gst = 280.46061837 + 360.98564736629 * (jd - 2451545.0)
+            + 0.000387933 * T * T - T * T * T / 38710000;
+    return mod360(gst);
+}
+
+// ===== Transfer Orbit Calculation =====
+function calculateTransfer(parkingAlt, moonDist) {
+    const rp = R_EARTH + parkingAlt;
+    const ra = moonDist;
+    const a = (rp + ra) / 2;
+    const e = (ra - rp) / (ra + rp);
+
+    const vPark = Math.sqrt(MU_EARTH / rp);
+    const vTLI = Math.sqrt(MU_EARTH * (2/rp - 1/a));
+    const dvTLI = vTLI - vPark;
+
+    // C3
+    const C3 = vTLI * vTLI - 2 * MU_EARTH / rp;
+
+    // Transfer time (Hohmann half-period)
+    const T = Math.PI * Math.sqrt(a*a*a / MU_EARTH); // seconds
+
+    // LOI estimate (enter 100km lunar orbit)
+    const MU_MOON = 4902.8;
+    const rMoonOrbit = 1737 + 100;
+    const vArrival = Math.sqrt(MU_EARTH * (2/ra - 1/a));
+    const vMoonOrbit = Math.sqrt(MU_MOON / rMoonOrbit);
+    // Approximate LOI dV (simplified - actual depends on hyperbolic excess velocity at Moon)
+    const vInfMoon = Math.abs(vArrival - 2 * Math.PI * moonDist / (27.3217 * 86400)); // relative to Moon
+    const vHyp = Math.sqrt(vInfMoon * vInfMoon + 2 * MU_MOON / rMoonOrbit);
+    const dvLOI = Math.abs(vHyp - vMoonOrbit);
+
+    return { a, e, rp, ra, vPark, vTLI, dvTLI, dvLOI, C3, transferTime: T };
+}
+
+// ===== Launch Window Calculation =====
+function calculateLaunchWindow(launchDate, site, parkingAlt, transferDays) {
+    const jd0 = julianDate(launchDate);
+    const arrivalJD = jd0 + transferDays;
+
+    // Moon position at arrival
+    const moonArr = getMoonPosition(arrivalJD);
+    const moonEq = eclipticToEquatorial(moonArr.lon, moonArr.lat);
+
+    // Moon position at launch (for display)
+    const moonLaunch = getMoonPosition(jd0);
+    const moonLaunchEq = eclipticToEquatorial(moonLaunch.lon, moonLaunch.lat);
+
+    // Transfer orbit
+    const transfer = calculateTransfer(parkingAlt, moonArr.dist);
+
+    // Moon's orbital elements (白道面参数)
+    const T = (jd0 - 2451545.0) / 36525;
+    const moonNode = mod360(125.0446 - 1934.1363 * T); // 升交点经度
+    const moonOrbInc = 5.145; // 白道面相对黄道面倾角 (degrees)
+
+    // 白道面法向量 in ecliptic coords: n = Rz(Ω)·Rx(i)·(0,0,1)
+    const nodeRad = moonNode * DEG;
+    const incMoonRad = moonOrbInc * DEG;
+    const lunarPlaneNormal_ecl = {
+        x: Math.sin(incMoonRad) * Math.sin(nodeRad),
+        y: -Math.sin(incMoonRad) * Math.cos(nodeRad),
+        z: Math.cos(incMoonRad)
+    };
+
+    // Sun longitude at launch
+    const sunLon = getSunLongitude(jd0);
+
+    // Moon phase
+    const elongation = mod360(moonLaunch.lon - sunLon);
+    const illumination = (1 - Math.cos(elongation * DEG)) / 2;
+
+    // ===== 白道面 → 赤道坐标系变换 =====
+    // 转移轨道在白道面内，发射窗口 = 发射场穿越白道面的时刻
+    // 白道面法向量 ecliptic → equatorial: v_eq = Rx(ε) · v_ecl
+    const nEcl = lunarPlaneNormal_ecl;
+    const cosE = Math.cos(OBLIQUITY), sinE = Math.sin(OBLIQUITY);
+    const nEq = {
+        x: nEcl.x,
+        y: nEcl.y * cosE - nEcl.z * sinE,
+        z: nEcl.y * sinE + nEcl.z * cosE
+    };
+
+    // 白道面相对赤道面的倾角和升交点赤经
+    const incEq = Math.acos(nEq.z) / DEG;  // 白道面 vs 赤道面倾角 (18.3°~28.6°)
+    const raanEq = mod360(Math.atan2(nEq.x, -nEq.y) / DEG); // 白道面升交点赤经
+
+    // 发射方位角: sin(Az) = cos(i_eq) / cos(φ)
+    const siteLat = site.lat * DEG;
+    const sinAz = nEq.z / Math.cos(siteLat); // = cos(i_eq)/cos(φ)
+    let launchAz;
+    if (Math.abs(sinAz) <= 1) {
+        launchAz = Math.asin(sinAz) / DEG;
+        if (launchAz < 0) launchAz += 360;
+    } else {
+        launchAz = 90; // 纬度超出白道面倾角范围, 需面外机动
+    }
+
+    // ===== 发射窗口：发射场穿越白道面时刻 =====
+    // 条件: cosφ·[nx·cos(LST) + ny·sin(LST)] + sinφ·nz = 0
+    // 解: LST = α ± acos(k)
+    //   α = atan2(ny, nx), k = -nz·tan(φ) / sqrt(nx²+ny²)
+    const A = Math.sqrt(nEq.x * nEq.x + nEq.y * nEq.y); // = sin(i_eq)
+    const alpha = Math.atan2(nEq.y, nEq.x) / DEG;
+    const k = -nEq.z * Math.tan(siteLat) / A;
+
+    const gst0 = greenwichSiderealTime(jd0);
+    const siteLon = site.lon;
+    let windows;
+
+    // Window width: Δt = ΔV_budget / (V_TLI · ω_E · √(sin²i - sin²φ))
+    const OMEGA_E = 7.2921e-5; // rad/s sidereal rotation rate
+    const crossRate = OMEGA_E * Math.sqrt(
+        Math.max(0, A * A - nEq.z * nEq.z * Math.pow(Math.tan(siteLat), 2))
+    ); // actually = ω_E · √(sin²i_eq - sin²φ)
+    // More precisely: ω_E · cos(φ) · A · |sin(±acos(k))| = ω_E · √(sin²i - sin²φ)
+    const dvBudget = 0.2; // km/s, typical 200 m/s plane-change budget
+    let windowWidthMin = NaN;
+    if (A > 0 && Math.abs(k) <= 1) {
+        const sinDLST = Math.sqrt(1 - k * k);
+        const rate = OMEGA_E * Math.cos(siteLat) * A * sinDLST;
+        windowWidthMin = 2 * (dvBudget / transfer.vTLI) / rate / 60; // minutes
+    }
+
+    if (Math.abs(k) <= 1) {
+        const dLST = Math.acos(k) / DEG;
+        const lst1 = mod360(alpha + dLST); // d(site·n)/dLST < 0 → 降交点
+        const lst2 = mod360(alpha - dLST); // d(site·n)/dLST > 0 → 升交点
+
+        // LST → UTC: GST = LST - siteLon, dt = (GST - GST0) / sidereal_rate
+        const dtDesc = mod360(lst1 - siteLon - gst0) / 360.98564736629 * 24;
+        const dtAsc  = mod360(lst2 - siteLon - gst0) / 360.98564736629 * 24;
+        windows = [
+            { time: dtAsc,  label: '升交白道' },
+            { time: dtDesc, label: '降交白道' }
+        ].sort((a, b) => a.time - b.time);
+    } else {
+        windows = null; // 纬度超限
+    }
+
+    return {
+        moonLaunch, moonArr, moonLaunchEq, moonEq,
+        transfer, sunLon, elongation, illumination,
+        incEq, launchAz, raanEq,
+        moonNode, moonOrbInc, lunarPlaneNormal_ecl, nEq,
+        windows, windowWidthMin, gst0, arrivalJD
+    };
+}
+
+function formatHoursLocal(hoursUTC, tzOffset) {
+    let local = hoursUTC + tzOffset;
+    let dayLabel = '';
+    if (local >= 24) { local -= 24; dayLabel = ' (+1d)'; }
+    else if (local < 0) { local += 24; dayLabel = ' (-1d)'; }
+    const h = Math.floor(local);
+    const m = Math.floor((local - h) * 60);
+    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}${dayLabel}`;
+}
+
+function formatAngle(deg) {
+    return deg.toFixed(2) + '°';
+}
+
+function getPhaseName(elongation) {
+    if (elongation < 22.5) return '新月 (朔)';
+    if (elongation < 67.5) return '蛾眉月';
+    if (elongation < 112.5) return '上弦月';
+    if (elongation < 157.5) return '盈凸月';
+    if (elongation < 202.5) return '满月 (望)';
+    if (elongation < 247.5) return '亏凸月';
+    if (elongation < 292.5) return '下弦月';
+    if (elongation < 337.5) return '残月';
+    return '新月 (朔)';
+}
+
+// ===== Draw Moon Phase =====
+function drawMoonPhase(canvas, elongation) {
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height;
+    const cx = w/2, cy = h/2, r = w/2 - 2;
+    ctx.clearRect(0, 0, w, h);
+
+    const phase = elongation * DEG;
+    const cosPhase = Math.cos(phase);
+
+    // Full moon surface (light)
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, 2*Math.PI);
+    ctx.fillStyle = '#c8c4bc';
+    ctx.fill();
+    ctx.strokeStyle = '#555';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Draw shadow region (dark overlay)
+    ctx.save();
+    ctx.beginPath();
+
+    if (elongation <= 180) {
+        // Waxing: LEFT side in shadow
+        ctx.arc(cx, cy, r, Math.PI/2, -Math.PI/2, false);
+        if (elongation <= 90) {
+            ctx.ellipse(cx, cy, r * Math.abs(cosPhase), r, 0, -Math.PI/2, Math.PI/2, false);
+        } else {
+            ctx.ellipse(cx, cy, r * Math.abs(cosPhase), r, 0, -Math.PI/2, Math.PI/2, true);
+        }
+    } else {
+        // Waning: RIGHT side in shadow
+        ctx.arc(cx, cy, r, -Math.PI/2, Math.PI/2, false);
+        if (elongation <= 270) {
+            ctx.ellipse(cx, cy, r * Math.abs(cosPhase), r, 0, Math.PI/2, -Math.PI/2, true);
+        } else {
+            ctx.ellipse(cx, cy, r * Math.abs(cosPhase), r, 0, Math.PI/2, -Math.PI/2, false);
+        }
+    }
+    ctx.closePath();
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fill();
+    ctx.restore();
+
+    // Subtle surface texture (deterministic positions for stability)
+    ctx.globalAlpha = 0.1;
+    const craters = [[0.3,0.4,5],[0.6,0.3,7],[0.5,0.7,4],[0.7,0.6,6],[0.2,0.6,3],[0.4,0.2,5],[0.8,0.5,4],[0.3,0.8,6]];
+    for (const [fx, fy, sr] of craters) {
+        const sx = cx + (fx - 0.5) * r * 1.4;
+        const sy = cy + (fy - 0.5) * r * 1.4;
+        ctx.beginPath();
+        ctx.arc(sx, sy, sr, 0, 2*Math.PI);
+        ctx.fillStyle = '#667';
+        ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+}
+
+// ===== Three.js Scene =====
+const viewport = document.getElementById('viewport');
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 50000);
+camera.position.set(20, 20, 30);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setClearColor(0x0a0a1a);
+viewport.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 3;
+controls.maxDistance = 200;
+
+// Lights
+scene.add(new THREE.AmbientLight(0x334466, 0.6));
+const sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
+sunLight.position.set(50, 10, 0);
+scene.add(sunLight);
+
+// Stars (very far to eliminate parallax)
+const starsGeo = new THREE.BufferGeometry();
+const starPositions = [];
+for (let i = 0; i < 3000; i++) {
+    const theta = Math.random() * 2 * Math.PI;
+    const phi = Math.acos(2 * Math.random() - 1);
+    const r = 8000 + Math.random() * 4000;
+    starPositions.push(r*Math.sin(phi)*Math.cos(theta), r*Math.sin(phi)*Math.sin(theta), r*Math.cos(phi));
+}
+starsGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3));
+const starsMat = new THREE.PointsMaterial({ color: 0xffffff, size: 3, sizeAttenuation: true });
+scene.add(new THREE.Points(starsGeo, starsMat));
+
+// ===== Scene Objects =====
+const SCALE = 20 / 384400; // visual scale: Moon orbit radius ~ 20 units
+const EARTH_VIS_R = 1.0;   // visual Earth radius
+const MOON_VIS_R = 0.27;
+
+// Earth
+const earthGroup = new THREE.Group();
+scene.add(earthGroup);
+
+const earthGeo = new THREE.SphereGeometry(EARTH_VIS_R, 64, 64);
+const earthMat = new THREE.MeshPhongMaterial({
+    color: 0x2255aa,
+    emissive: 0x112244,
+    specular: 0x333333,
+    shininess: 25
+});
+const earthMesh = new THREE.Mesh(earthGeo, earthMat);
+earthGroup.add(earthMesh);
+
+// Load Earth texture (fallback to solid color if unavailable)
+const textureLoader = new THREE.TextureLoader();
+textureLoader.load(
+    'https://unpkg.com/three-globe@2.31.1/example/img/earth-blue-marble.jpg',
+    (tex) => { earthMat.map = tex; earthMat.color.set(0xffffff); earthMat.emissive.set(0x000000); earthMat.needsUpdate = true; },
+    undefined,
+    () => {} // keep solid color fallback
+);
+
+// Earth lat/lon grid (经纬网格) - right-handed: z = -cos(lat)*sin(lon)
+const gridMat = new THREE.LineBasicMaterial({ color: 0x3366aa, transparent: true, opacity: 0.18 });
+// Latitude circles (every 30°)
+for (let latDeg = -60; latDeg <= 60; latDeg += 30) {
+    const latR = latDeg * DEG;
+    const r = EARTH_VIS_R * Math.cos(latR);
+    const yy = EARTH_VIS_R * Math.sin(latR);
+    const pts = [];
+    for (let j = 0; j <= 64; j++) {
+        const lonR = (j / 64) * 2 * Math.PI;
+        pts.push(new THREE.Vector3(r * Math.cos(lonR), yy, -r * Math.sin(lonR)));
+    }
+    earthGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), gridMat));
+}
+// Equator (brighter)
+{
+    const eqMat = new THREE.LineBasicMaterial({ color: 0x44aacc, transparent: true, opacity: 0.3 });
+    const pts = [];
+    for (let j = 0; j <= 64; j++) {
+        const lonR = (j / 64) * 2 * Math.PI;
+        pts.push(new THREE.Vector3(EARTH_VIS_R * Math.cos(lonR), 0, -EARTH_VIS_R * Math.sin(lonR)));
+    }
+    earthGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), eqMat));
+}
+// Longitude meridians (every 30°)
+for (let lonDeg = 0; lonDeg < 360; lonDeg += 30) {
+    const lonR = lonDeg * DEG;
+    const pts = [];
+    for (let j = 0; j <= 64; j++) {
+        const latR = (j / 64) * Math.PI - Math.PI / 2;
+        pts.push(new THREE.Vector3(
+            EARTH_VIS_R * Math.cos(latR) * Math.cos(lonR),
+            EARTH_VIS_R * Math.sin(latR),
+            -EARTH_VIS_R * Math.cos(latR) * Math.sin(lonR)
+        ));
+    }
+    earthGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), gridMat));
+}
+
+// 白道面 ground track on Earth surface (inertially fixed, not rotating with Earth)
+// Placed in scene, not earthGroup, so it stays fixed while Earth rotates beneath it
+const lunarTrackPts = [];
+for (let i = 0; i <= 128; i++) {
+    lunarTrackPts.push(new THREE.Vector3(0, 0, 0)); // placeholder, updated in updateScene
+}
+const lunarTrackGeo = new THREE.BufferGeometry().setFromPoints(lunarTrackPts);
+const lunarTrackMat = new THREE.LineBasicMaterial({ color: 0xccaa44, transparent: true, opacity: 0.7 });
+const lunarTrackLine = new THREE.Line(lunarTrackGeo, lunarTrackMat);
+scene.add(lunarTrackLine);
+
+// Apply Earth's axial tilt relative to ecliptic
+// Scene coords: ecliptic x→x, ecliptic z→y (up), ecliptic y→-z
+// earthGroup local uses right-handed equatorial: x=RA0, y=pole, z=-RA90
+// Transform to scene: P · Rx(-ε) · p_local, achieved by rotation.x = -OBLIQUITY
+earthGroup.rotation.x = -OBLIQUITY;
+
+// Launch site marker
+const siteMarkerGeo = new THREE.SphereGeometry(0.05, 16, 16);
+const siteMarkerMat = new THREE.MeshBasicMaterial({ color: 0x22cc66 });
+const siteMarker = new THREE.Mesh(siteMarkerGeo, siteMarkerMat);
+earthGroup.add(siteMarker);
+
+// Glow ring around site
+const siteGlowGeo = new THREE.RingGeometry(0.06, 0.09, 32);
+const siteGlowMat = new THREE.MeshBasicMaterial({ color: 0x22cc66, side: THREE.DoubleSide, transparent: true, opacity: 0.5 });
+const siteGlow = new THREE.Mesh(siteGlowGeo, siteGlowMat);
+earthGroup.add(siteGlow);
+
+// Moon with procedural texture
+function createMoonTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512; canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#9a9a9a';
+    ctx.fillRect(0, 0, 512, 256);
+    // Seeded pseudo-random for deterministic pattern
+    let seed = 12345;
+    function srand() { seed = (seed * 16807 + 0) % 2147483647; return seed / 2147483647; }
+    // Maria (dark basalt plains)
+    const maria = [[180,100,60,40],[280,120,45,35],[350,90,30,25],[120,140,50,30],[400,80,35,28],[220,160,40,20],[150,60,25,20]];
+    for (const [mx, my, rx, ry] of maria) {
+        ctx.beginPath();
+        ctx.ellipse(mx, my, rx, ry, srand()*0.5, 0, Math.PI*2);
+        ctx.fillStyle = `rgba(70,70,75,${0.3+srand()*0.2})`;
+        ctx.fill();
+    }
+    // Craters
+    for (let i = 0; i < 300; i++) {
+        const cx = srand() * 512, cy = srand() * 256;
+        const cr = srand() * 8 + 1;
+        const b = Math.floor(srand() * 50 + 110);
+        ctx.beginPath();
+        ctx.arc(cx, cy, cr, 0, Math.PI*2);
+        ctx.fillStyle = `rgb(${b},${b},${b})`;
+        ctx.fill();
+        // Bright rim
+        ctx.beginPath();
+        ctx.arc(cx, cy, cr, 0, Math.PI*2);
+        ctx.strokeStyle = `rgba(180,180,180,${srand()*0.3})`;
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+    }
+    // Surface noise
+    for (let i = 0; i < 2000; i++) {
+        const x = srand() * 512, y = srand() * 256;
+        const b = Math.floor(srand() * 30 + 130);
+        ctx.fillStyle = `rgba(${b},${b},${b},0.15)`;
+        ctx.fillRect(x, y, 2, 2);
+    }
+    return new THREE.CanvasTexture(canvas);
+}
+
+const moonGeo = new THREE.SphereGeometry(MOON_VIS_R, 32, 32);
+const moonMat = new THREE.MeshPhongMaterial({
+    map: createMoonTexture(),
+    specular: 0x111111,
+    shininess: 5
+});
+const moonMesh = new THREE.Mesh(moonGeo, moonMat);
+scene.add(moonMesh);
+
+// Moon orbit ring
+const moonOrbitPoints = [];
+for (let i = 0; i <= 128; i++) {
+    const ang = (i / 128) * 2 * Math.PI;
+    moonOrbitPoints.push(new THREE.Vector3(20 * Math.cos(ang), 0, 20 * Math.sin(ang)));
+}
+const moonOrbitGeo = new THREE.BufferGeometry().setFromPoints(moonOrbitPoints);
+const moonOrbitMat = new THREE.LineBasicMaterial({ color: 0x445566, transparent: true, opacity: 0.4 });
+const moonOrbitLine = new THREE.Line(moonOrbitGeo, moonOrbitMat);
+// Moon orbit inclination to ecliptic ~5.145 degrees
+// The actual inclination changes, but we'll use this as default
+scene.add(moonOrbitLine);
+
+// 白道面 (Lunar orbital plane) - semi-transparent
+const lunarPlaneGeo = new THREE.RingGeometry(1.5, 26, 64);
+const lunarPlaneMat = new THREE.MeshBasicMaterial({
+    color: 0xccaa44, side: THREE.DoubleSide, transparent: true, opacity: 0.05
+});
+const lunarPlane = new THREE.Mesh(lunarPlaneGeo, lunarPlaneMat);
+scene.add(lunarPlane);
+
+// 白道面 border ring (more visible outline) - in XY plane (same as RingGeometry)
+const lunarBorderPts = [];
+for (let i = 0; i <= 128; i++) {
+    const ang = (i / 128) * 2 * Math.PI;
+    lunarBorderPts.push(new THREE.Vector3(26 * Math.cos(ang), 26 * Math.sin(ang), 0));
+}
+const lunarBorderGeo = new THREE.BufferGeometry().setFromPoints(lunarBorderPts);
+const lunarBorderMat = new THREE.LineDashedMaterial({ color: 0xccaa44, dashSize: 0.8, gapSize: 0.4, transparent: true, opacity: 0.25 });
+const lunarBorderLine = new THREE.Line(lunarBorderGeo, lunarBorderMat);
+lunarBorderLine.computeLineDistances();
+scene.add(lunarBorderLine);
+
+// Ecliptic plane
+const eclipticGeo = new THREE.RingGeometry(1.5, 28, 64);
+const eclipticMat = new THREE.MeshBasicMaterial({
+    color: 0x4466cc, side: THREE.DoubleSide, transparent: true, opacity: 0.06
+});
+const eclipticPlane = new THREE.Mesh(eclipticGeo, eclipticMat);
+eclipticPlane.rotation.x = Math.PI / 2;
+eclipticPlane.visible = false;
+scene.add(eclipticPlane);
+
+// Ecliptic grid lines
+const eclipticGridGroup = new THREE.Group();
+for (let i = 0; i < 12; i++) {
+    const ang = (i / 12) * Math.PI;
+    const pts = [
+        new THREE.Vector3(28 * Math.cos(ang), 0, 28 * Math.sin(ang)),
+        new THREE.Vector3(-28 * Math.cos(ang), 0, -28 * Math.sin(ang))
+    ];
+    const geo = new THREE.BufferGeometry().setFromPoints(pts);
+    const mat = new THREE.LineBasicMaterial({ color: 0x334466, transparent: true, opacity: 0.15 });
+    eclipticGridGroup.add(new THREE.Line(geo, mat));
+}
+eclipticGridGroup.visible = false;
+scene.add(eclipticGridGroup);
+
+// Equatorial plane (tilted by obliquity from ecliptic)
+const equatorPlaneGeo = new THREE.RingGeometry(1.5, 25, 64);
+const equatorPlaneMat = new THREE.MeshBasicMaterial({
+    color: 0x44cc66, side: THREE.DoubleSide, transparent: true, opacity: 0.04
+});
+const equatorPlane = new THREE.Mesh(equatorPlaneGeo, equatorPlaneMat);
+// The ecliptic plane is at y=0 (xz plane). Equatorial plane is tilted by obliquity.
+// RingGeometry starts in xy plane. rotation.x=PI/2 puts it in xz plane (ecliptic).
+// Then we need to tilt it by obliquity around the x-axis.
+equatorPlane.rotation.set(Math.PI/2 - OBLIQUITY, 0, 0);
+equatorPlane.visible = false;
+scene.add(equatorPlane);
+
+// Transfer orbit line
+const transferGroup = new THREE.Group();
+scene.add(transferGroup);
+
+// Parking orbit circle
+const parkingOrbitGroup = new THREE.Group();
+scene.add(parkingOrbitGroup);
+
+// Sun direction indicator (line extends ~30 units as direction guide)
+const sunArrowGeo = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, 0, 0), new THREE.Vector3(30, 0, 0)
+]);
+const sunArrowMat = new THREE.LineBasicMaterial({ color: 0xffcc00, transparent: true, opacity: 0.3 });
+const sunArrow = new THREE.Line(sunArrowGeo, sunArrowMat);
+scene.add(sunArrow);
+
+// Sun marker (far away to eliminate parallax at 2× Moon orbit zoom)
+const sunMarkerGeo = new THREE.SphereGeometry(12, 16, 16);
+const sunMarkerMat = new THREE.MeshBasicMaterial({ color: 0xffdd44 });
+const sunMarker = new THREE.Mesh(sunMarkerGeo, sunMarkerMat);
+scene.add(sunMarker);
+
+// ===== Shadow Cones =====
+// Earth umbral shadow cone
+// Physical umbra length: L = R_earth * D_sun / (R_sun - R_earth) ≈ 1,382,000 km
+// At visual scale: ~72 units. Cap visually at 60 units.
+const EARTH_SHADOW_LEN = 60;
+const earthShadowGroup = new THREE.Group();
+const earthShadowGeo = new THREE.ConeGeometry(EARTH_VIS_R, EARTH_SHADOW_LEN, 32, 1, true);
+const earthShadowMat = new THREE.MeshBasicMaterial({
+    color: 0x000022, transparent: true, opacity: 0.12, side: THREE.DoubleSide
+});
+const earthShadowCone = new THREE.Mesh(earthShadowGeo, earthShadowMat);
+// Position cone so base sits at Earth surface, tip extends away from Sun
+earthShadowCone.position.y = EARTH_VIS_R + EARTH_SHADOW_LEN / 2;
+earthShadowGroup.add(earthShadowCone);
+scene.add(earthShadowGroup);
+
+// Moon umbral shadow cone
+// Physical umbra length: L = R_moon * D_sun / (R_sun - R_moon) ≈ 374,300 km → ~19.5 units at scale
+const MOON_SHADOW_LEN = 19;
+const moonShadowGroup = new THREE.Group();
+const moonShadowGeo = new THREE.ConeGeometry(MOON_VIS_R, MOON_SHADOW_LEN, 32, 1, true);
+const moonShadowMat = new THREE.MeshBasicMaterial({
+    color: 0x000022, transparent: true, opacity: 0.10, side: THREE.DoubleSide
+});
+const moonShadowCone = new THREE.Mesh(moonShadowGeo, moonShadowMat);
+moonShadowCone.position.y = MOON_VIS_R + MOON_SHADOW_LEN / 2;
+moonShadowGroup.add(moonShadowCone);
+scene.add(moonShadowGroup);
+
+// Text labels using sprites (2× canvas resolution)
+function makeTextSprite(text, color = '#ffffff', fontSize = 48, scale = 1.0) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    ctx.font = `${fontSize * 2}px Arial`;
+    ctx.fillStyle = color;
+    ctx.textAlign = 'center';
+    ctx.fillText(text, 256, 96);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    const mat = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(3 * scale, 0.75 * scale, 1);
+    return sprite;
+}
+
+const earthLabel = makeTextSprite('地球 Earth', '#6699cc', 48, 0.55);
+earthLabel.position.set(0, 1.5, 0);
+scene.add(earthLabel);
+
+const moonLabel = makeTextSprite('月球 Moon', '#aaaaaa', 48, 0.55);
+scene.add(moonLabel);
+
+// Ghost Moon at arrival position
+const moonGhostGeo = new THREE.SphereGeometry(MOON_VIS_R * 0.8, 16, 16);
+const moonGhostMat = new THREE.MeshBasicMaterial({ color: 0xf0883e, transparent: true, opacity: 0.25, wireframe: true });
+const moonGhost = new THREE.Mesh(moonGhostGeo, moonGhostMat);
+scene.add(moonGhost);
+const moonGhostLabel = makeTextSprite('到达位置', '#f0883e', 36, 0.5);
+scene.add(moonGhostLabel);
+
+const siteLabel = makeTextSprite('发射场', '#22cc66', 32, 0.4);
+earthGroup.add(siteLabel);
+
+const sunLabel = makeTextSprite('太阳方向 →', '#ffcc44', 36, 0.55);
+scene.add(sunLabel);
+
+// ===== State =====
+let currentResult = null;
+
+// Set Earth rotation to show correct orientation at a given UTC hour
+function setEarthToTime(hoursUTC) {
+    if (!currentResult) return;
+    const gst = mod360(currentResult.gst0 + 360.98564736629 * hoursUTC / 24);
+    // Right-handed earthGroup: z = -sin(lon), so Ry(+θ) rotates eastward
+    // Site at lon appears at RA = lon + θ; want RA = LST = GST + lon → θ = GST
+    earthGroup.rotation.y = gst * DEG;
+}
+
+// ===== Update Functions =====
+function updateScene(result) {
+    if (!result) return;
+    currentResult = result;
+
+    const { moonLaunch, moonArr, transfer, sunLon, incEq, raanEq, moonNode, moonOrbInc, lunarPlaneNormal_ecl, nEq } = result;
+
+    // Moon position at launch (ecliptic coords → 3D)
+    const moonEC = eclipticToCartesian(moonLaunch.lon, moonLaunch.lat, moonLaunch.dist);
+    // In our scene, ecliptic frame: x→vernal equinox, z→ecliptic north, y→90°ecliptic lon
+    // Three.js: x right, y up, z toward viewer
+    // Map ecliptic: x→x, y→z (into screen), z→y (up) ... let's use:
+    // ecliptic x → scene x, ecliptic y → scene -z, ecliptic z → scene y
+    const moonVisX = moonEC.x * SCALE;
+    const moonVisY = moonEC.z * SCALE; // ecliptic z → up
+    const moonVisZ = -moonEC.y * SCALE; // ecliptic y → -z
+    moonMesh.position.set(moonVisX, moonVisY, moonVisZ);
+    moonLabel.position.set(moonVisX, moonVisY + 0.6, moonVisZ);
+
+    // Moon arrival position (ghost)
+    const moonArrEC = eclipticToCartesian(moonArr.lon, moonArr.lat, moonArr.dist);
+    const moonArrVisX = moonArrEC.x * SCALE;
+    const moonArrVisY = moonArrEC.z * SCALE;
+    const moonArrVisZ = -moonArrEC.y * SCALE;
+    moonGhost.position.set(moonArrVisX, moonArrVisY, moonArrVisZ);
+    moonGhostLabel.position.set(moonArrVisX, moonArrVisY + 0.5, moonArrVisZ);
+
+    // Moon orbit ring (白道) - use correct rotation: R = Rz(Ω) · Rx(i)
+    // where Ω = ascending node longitude, i = inclination to ecliptic
+    const nodeRad = moonNode * DEG;
+    const moonIncRad = moonOrbInc * DEG;
+    const cosN = Math.cos(nodeRad), sinN = Math.sin(nodeRad);
+    const cosI = Math.cos(moonIncRad), sinI = Math.sin(moonIncRad);
+
+    const orbitPts = [];
+    for (let i = 0; i <= 128; i++) {
+        const ang = (i / 128) * 2 * Math.PI;
+        const r = 20;
+        let ox = r * Math.cos(ang);
+        let oy = r * Math.sin(ang);
+        // Step 1: Rx(i) - apply inclination first
+        let x1 = ox;
+        let y1 = oy * cosI;
+        let z1 = oy * sinI;
+        // Step 2: Rz(Ω) - then rotate by ascending node
+        let x2 = x1 * cosN - y1 * sinN;
+        let y2 = x1 * sinN + y1 * cosN;
+        let z2 = z1;
+        // Map ecliptic(x,y,z) → scene(x, z, -y)
+        orbitPts.push(new THREE.Vector3(x2, z2, -y2));
+    }
+    moonOrbitLine.geometry.dispose();
+    moonOrbitLine.geometry = new THREE.BufferGeometry().setFromPoints(orbitPts);
+
+    // 白道面 orientation - use the same rotation as the orbit ring
+    // Normal in ecliptic: n = (sinI·sinΩ, -sinI·cosΩ, cosI)
+    // Normal in scene coords: ecl(x,y,z)→scene(x,z,-y)
+    const nScene = new THREE.Vector3(
+        lunarPlaneNormal_ecl.x, lunarPlaneNormal_ecl.z, -lunarPlaneNormal_ecl.y
+    ).normalize();
+    // Rotate RingGeometry from its default normal (+Z) to 白道面 normal
+    const lunarPlaneQuat = new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(0, 0, 1), nScene
+    );
+    lunarPlane.quaternion.copy(lunarPlaneQuat);
+    lunarBorderLine.quaternion.copy(lunarPlaneQuat);
+
+    // 白道面 ground track on Earth surface (great circle in scene coords)
+    let uTrack = new THREE.Vector3(1, 0, 0);
+    if (Math.abs(uTrack.dot(nScene)) > 0.9) uTrack.set(0, 1, 0);
+    uTrack = new THREE.Vector3().crossVectors(nScene, uTrack).normalize();
+    const vTrack = new THREE.Vector3().crossVectors(nScene, uTrack).normalize();
+    const trackPts = [];
+    for (let i = 0; i <= 128; i++) {
+        const ang = (i / 128) * 2 * Math.PI;
+        trackPts.push(
+            uTrack.clone().multiplyScalar(EARTH_VIS_R * 1.003 * Math.cos(ang))
+            .add(vTrack.clone().multiplyScalar(EARTH_VIS_R * 1.003 * Math.sin(ang)))
+        );
+    }
+    lunarTrackLine.geometry.dispose();
+    lunarTrackLine.geometry = new THREE.BufferGeometry().setFromPoints(trackPts);
+
+    // Sun direction (ecliptic longitude → scene direction)
+    const sunDir = new THREE.Vector3(
+        Math.cos(sunLon * DEG),
+        0,
+        Math.sin(sunLon * DEG)
+    );
+    // Map to scene: ecliptic (x,y,z)→scene(x, z_ecl, -y_ecl)
+    const sunScene = new THREE.Vector3(sunDir.x, 0, -sunDir.z);
+    sunScene.normalize();
+    sunLight.position.copy(sunScene.clone().multiplyScalar(50));
+    sunLight.position.y = 5;
+    sunMarker.position.copy(sunScene.clone().multiplyScalar(2000));
+    sunMarker.position.y = 0;
+    sunLabel.position.copy(sunScene.clone().multiplyScalar(32));
+    sunLabel.position.y = 0.8;
+
+    sunArrow.geometry.dispose();
+    sunArrow.geometry = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, 0.1, 0),
+        sunScene.clone().multiplyScalar(30).setY(0.1)
+    ]);
+
+    // Shadow cones: orient anti-sun
+    const antiSun = sunScene.clone().negate().normalize();
+    const shadowQuat = new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(0, 1, 0), antiSun
+    );
+    earthShadowGroup.quaternion.copy(shadowQuat);
+    earthShadowGroup.position.set(0, 0, 0);
+    moonShadowGroup.quaternion.copy(shadowQuat);
+    moonShadowGroup.position.copy(moonMesh.position);
+
+    // Transfer orbit
+    updateTransferOrbit(result);
+
+    // Parking orbit
+    updateParkingOrbit(result);
+
+    // Launch site marker
+    updateSiteMarker();
+}
+
+function updateTransferOrbit(result) {
+    // Clear old
+    while (transferGroup.children.length) {
+        transferGroup.children[0].geometry?.dispose();
+        transferGroup.children[0].material?.dispose();
+        transferGroup.remove(transferGroup.children[0]);
+    }
+
+    if (!result) return;
+
+    const { moonArr, transfer } = result;
+    // Use Moon's ARRIVAL position as the target for the transfer orbit
+    const moonEC = eclipticToCartesian(moonArr.lon, moonArr.lat, moonArr.dist);
+
+    // Visual transfer orbit: recompute ellipse with rpVis as perigee
+    // so the orbit is genuinely tangent to the parking orbit (no radius clamping)
+    const rpVis = EARTH_VIS_R * transfer.rp / R_EARTH;
+    const raVis = moonArr.dist * SCALE;
+    const aVis = (rpVis + raVis) / 2;
+    const eVis = (raVis - rpVis) / (raVis + rpVis);
+    const pVis = aVis * (1 - eVis * eVis);
+
+    // Moon arrival direction in scene coords
+    const moonDir = new THREE.Vector3(
+        moonEC.x, moonEC.z, -moonEC.y
+    ).normalize();
+
+    // Hohmann-like: perigee at ν=0 (anti-Moon), Moon at apogee ν=π
+    const nuArr = Math.PI;
+    const nPts = 100;
+    const orbitPts2D = [];
+    for (let i = 0; i <= nPts; i++) {
+        const nu = (i / nPts) * nuArr;
+        const r = pVis / (1 + eVis * Math.cos(nu));
+        orbitPts2D.push({ x: r * Math.cos(nu), y: r * Math.sin(nu) });
+    }
+
+    // The transfer orbit lies in the 白道面 (lunar orbital plane).
+    // Rationale: both Earth (at the focus) and the Moon are in the 白道面,
+    // so the transfer ellipse from Earth to Moon naturally lies in this plane.
+
+    // Perigee direction: opposite to Moon (Hohmann-like: perigee at 0°, Moon at ~180°)
+    const perigeeDir = moonDir.clone().negate();
+
+    // 白道面 normal in scene coordinates
+    const nEcl = result.lunarPlaneNormal_ecl;
+    const orbitNormal = new THREE.Vector3(nEcl.x, nEcl.z, -nEcl.y).normalize();
+
+    // Project perigeeDir into the 白道面 to ensure it's exactly in-plane
+    const dot = perigeeDir.dot(orbitNormal);
+    perigeeDir.sub(orbitNormal.clone().multiplyScalar(dot)).normalize();
+
+    // Orbit y-axis: perpendicular to both normal and perigee direction, lying in the plane
+    const orbitY = new THREE.Vector3().crossVectors(orbitNormal, perigeeDir).normalize();
+
+    // Transform 2D orbit points to 3D
+    const orbit3D = orbitPts2D.map(p => {
+        return new THREE.Vector3(
+            perigeeDir.x * p.x + orbitY.x * p.y,
+            perigeeDir.y * p.x + orbitY.y * p.y,
+            perigeeDir.z * p.x + orbitY.z * p.y
+        );
+    });
+
+    // Transfer orbit line
+    const transferGeo = new THREE.BufferGeometry().setFromPoints(orbit3D);
+    const transferMat = new THREE.LineBasicMaterial({ color: 0xf0883e, linewidth: 2 });
+    transferGroup.add(new THREE.Line(transferGeo, transferMat));
+
+    // Dashed extension (orbit beyond Moon arrival)
+    const extPts = [];
+    for (let i = 1; i <= 30; i++) {
+        const nu = Math.PI + (i / 30) * 0.6;
+        const r = pVis / (1 + eVis * Math.cos(nu));
+        if (r > 0 && r < 50) {
+            extPts.push(new THREE.Vector3(
+                perigeeDir.x * r * Math.cos(nu) + orbitY.x * r * Math.sin(nu),
+                perigeeDir.y * r * Math.cos(nu) + orbitY.y * r * Math.sin(nu),
+                perigeeDir.z * r * Math.cos(nu) + orbitY.z * r * Math.sin(nu)
+            ));
+        }
+    }
+    if (extPts.length > 1) {
+        const extGeo = new THREE.BufferGeometry().setFromPoints(extPts);
+        const extMat = new THREE.LineDashedMaterial({ color: 0xf0883e, dashSize: 0.3, gapSize: 0.2, transparent: true, opacity: 0.3 });
+        const extLine = new THREE.Line(extGeo, extMat);
+        extLine.computeLineDistances();
+        transferGroup.add(extLine);
+    }
+
+    // TLI point marker
+    const tliPos = orbit3D[0];
+    const tliGeo = new THREE.SphereGeometry(0.08, 12, 12);
+    const tliMat = new THREE.MeshBasicMaterial({ color: 0x00ff88 });
+    const tliMarker = new THREE.Mesh(tliGeo, tliMat);
+    tliMarker.position.copy(tliPos);
+    transferGroup.add(tliMarker);
+
+    // Arrival point marker
+    const arrPos = orbit3D[orbit3D.length - 1];
+    const arrGeo = new THREE.SphereGeometry(0.08, 12, 12);
+    const arrMat = new THREE.MeshBasicMaterial({ color: 0xff8800 });
+    const arrMarker = new THREE.Mesh(arrGeo, arrMat);
+    arrMarker.position.copy(arrPos);
+    transferGroup.add(arrMarker);
+
+    // Store orbit basis for parking orbit tangency
+    result._transferBasis = { perigeeDir: perigeeDir.clone(), orbitY: orbitY.clone(), rpVis };
+}
+
+function updateParkingOrbit(result) {
+    while (parkingOrbitGroup.children.length) {
+        parkingOrbitGroup.children[0].geometry?.dispose();
+        parkingOrbitGroup.children[0].material?.dispose();
+        parkingOrbitGroup.remove(parkingOrbitGroup.children[0]);
+    }
+
+    if (!result || !result._transferBasis) return;
+
+    // Use the same basis vectors as the transfer orbit for tangency at TLI point
+    const { perigeeDir, orbitY, rpVis } = result._transferBasis;
+
+    const pts = [];
+    for (let i = 0; i <= 64; i++) {
+        const ang = (i / 64) * 2 * Math.PI;
+        pts.push(
+            perigeeDir.clone().multiplyScalar(rpVis * Math.cos(ang))
+            .add(orbitY.clone().multiplyScalar(rpVis * Math.sin(ang)))
+        );
+    }
+    const geo = new THREE.BufferGeometry().setFromPoints(pts);
+    const mat = new THREE.LineBasicMaterial({ color: 0x44cc88, transparent: true, opacity: 0.4 });
+    parkingOrbitGroup.add(new THREE.Line(geo, mat));
+}
+
+function updateSiteMarker() {
+    const siteKey = document.getElementById('launch-site').value;
+    const site = LAUNCH_SITES[siteKey];
+    const lat = site.lat * DEG;
+    const lon = site.lon * DEG;
+
+    // Position on Earth surface in right-handed equatorial coords
+    // earthGroup frame: x→RA0, y→north pole, z→-RA90 (right-handed)
+    const x = EARTH_VIS_R * Math.cos(lat) * Math.cos(lon);
+    const y = EARTH_VIS_R * Math.sin(lat);
+    const z = -EARTH_VIS_R * Math.cos(lat) * Math.sin(lon);
+
+    // Place in earthGroup (equatorial frame, group handles tilt to ecliptic)
+    siteMarker.position.set(x, y, z);
+    siteGlow.position.copy(siteMarker.position);
+    siteGlow.lookAt(0, 0, 0);
+
+    // Label position in earthGroup local coords (slightly above marker)
+    siteLabel.position.set(x * 1.08, y * 1.08 + 0.12, z * 1.08);
+}
+
+function updateUI(result) {
+    if (!result) return;
+
+    const { moonLaunch, moonArr, moonLaunchEq, moonEq, transfer, elongation, illumination } = result;
+
+    // Moon position at launch
+    document.getElementById('moon-lon').textContent = formatAngle(moonLaunch.lon);
+    document.getElementById('moon-lat').textContent = formatAngle(moonLaunch.lat);
+    document.getElementById('moon-ra').textContent = formatAngle(moonLaunchEq.ra);
+    document.getElementById('moon-dec').textContent = formatAngle(moonLaunchEq.dec);
+    document.getElementById('moon-dist').textContent = Math.round(moonLaunch.dist).toLocaleString() + ' km';
+    document.getElementById('lunar-inc').textContent = result.moonOrbInc.toFixed(3) + '°';
+    document.getElementById('lunar-node').textContent = formatAngle(result.moonNode);
+    document.getElementById('lunar-raan-eq').textContent = formatAngle(result.raanEq);
+
+    // Moon phase
+    document.getElementById('phase-name').textContent = getPhaseName(elongation);
+    document.getElementById('phase-detail').textContent = `光照 ${(illumination * 100).toFixed(1)}% | 角距 ${formatAngle(elongation)}`;
+    drawMoonPhase(document.getElementById('moon-phase-canvas'), elongation);
+
+    // Transfer orbit
+    document.getElementById('orbit-sma').textContent = Math.round(transfer.a).toLocaleString() + ' km';
+    document.getElementById('orbit-ecc').textContent = transfer.e.toFixed(4);
+    document.getElementById('orbit-inc').textContent = formatAngle(result.incEq);
+    document.getElementById('orbit-dv').textContent = transfer.dvTLI.toFixed(3) + ' km/s';
+    document.getElementById('orbit-loi').textContent = transfer.dvLOI.toFixed(3) + ' km/s';
+    document.getElementById('orbit-c3').textContent = transfer.C3.toFixed(2) + ' km²/s²';
+
+    // Launch window (local time)
+    const siteKey = document.getElementById('launch-site').value;
+    const siteTZ = LAUNCH_SITES[siteKey];
+    document.getElementById('launch-az').textContent = formatAngle(result.launchAz);
+    document.getElementById('window-tz').textContent = siteTZ.tzName;
+    const btn1 = document.getElementById('window-1');
+    const btn2 = document.getElementById('window-2');
+    btn1.classList.remove('active');
+    btn2.classList.remove('active');
+    if (!result.windows) {
+        document.getElementById('window-1-label').textContent = '窗口 1';
+        document.getElementById('window-2-label').textContent = '窗口 2';
+        btn1.textContent = '纬度超限';
+        btn2.textContent = '需面外机动';
+        btn1.disabled = true;
+        btn2.disabled = true;
+        document.getElementById('window-width').textContent = '--';
+        // Set Earth to 0h UTC
+        setEarthToTime(0);
+    } else {
+        document.getElementById('window-1-label').textContent = `窗口 1 (${result.windows[0].label})`;
+        document.getElementById('window-2-label').textContent = `窗口 2 (${result.windows[1].label})`;
+        btn1.textContent = formatHoursLocal(result.windows[0].time, siteTZ.tz);
+        btn2.textContent = formatHoursLocal(result.windows[1].time, siteTZ.tz);
+        btn1.disabled = false;
+        btn2.disabled = false;
+        if (!isNaN(result.windowWidthMin)) {
+            document.getElementById('window-width').textContent = `~${result.windowWidthMin.toFixed(0)} min (ΔV≤200m/s)`;
+        } else {
+            document.getElementById('window-width').textContent = '--';
+        }
+        // Default: show Earth at window 1
+        setEarthToTime(result.windows[0].time);
+        btn1.classList.add('active');
+    }
+
+    // Arrival (show local time)
+    const arrDate = new Date(document.getElementById('launch-date').value + 'T00:00:00Z');
+    const transferDays = parseFloat(document.getElementById('transfer-time').value);
+    arrDate.setUTCDate(arrDate.getUTCDate() + Math.floor(transferDays));
+    arrDate.setUTCHours(Math.floor((transferDays % 1) * 24));
+    const arrLocal = new Date(arrDate.getTime() + siteTZ.tz * 3600000);
+    document.getElementById('arrival-date').textContent = arrLocal.toISOString().slice(0, 16).replace('T', ' ') + ` ${siteTZ.tzName.split(' ')[0]}`;
+    document.getElementById('arrival-dec').textContent = formatAngle(moonEq.dec);
+    document.getElementById('arrival-dist').textContent = Math.round(moonArr.dist).toLocaleString() + ' km';
+}
+
+// ===== Event Handlers =====
+function doCalculation() {
+    const siteKey = document.getElementById('launch-site').value;
+    const site = LAUNCH_SITES[siteKey];
+    const dateStr = document.getElementById('launch-date').value;
+    const parkingAlt = parseFloat(document.getElementById('parking-alt').value);
+    const transferDays = parseFloat(document.getElementById('transfer-time').value);
+
+    if (!dateStr) return;
+
+    const launchDate = new Date(dateStr + 'T00:00:00Z');
+    const result = calculateLaunchWindow(launchDate, site, parkingAlt, transferDays);
+
+    updateUI(result);
+    updateScene(result);
+}
+
+// Initialize date to today
+const today = new Date();
+const dateStr = today.toISOString().slice(0, 10);
+document.getElementById('launch-date').value = dateStr;
+
+// Site selector
+document.getElementById('launch-site').addEventListener('change', () => {
+    const siteKey = document.getElementById('launch-site').value;
+    const site = LAUNCH_SITES[siteKey];
+    document.getElementById('site-lat').textContent = `${Math.abs(site.lat).toFixed(3)}°${site.lat >= 0 ? 'N' : 'S'}`;
+    document.getElementById('site-lon').textContent = `${Math.abs(site.lon).toFixed(3)}°${site.lon >= 0 ? 'E' : 'W'}`;
+    doCalculation();
+});
+
+// Transfer time slider
+document.getElementById('transfer-time').addEventListener('input', (e) => {
+    document.getElementById('transfer-time-value').textContent = parseFloat(e.target.value).toFixed(1) + ' 天';
+    doCalculation();
+});
+
+// Date change
+document.getElementById('launch-date').addEventListener('change', doCalculation);
+
+// Parking altitude
+document.getElementById('parking-alt').addEventListener('change', doCalculation);
+
+// Calculate button
+document.getElementById('btn-calc').addEventListener('click', doCalculation);
+
+// Window buttons - rotate Earth to window time
+document.getElementById('window-1').addEventListener('click', () => {
+    if (!currentResult || !currentResult.windows) return;
+    setEarthToTime(currentResult.windows[0].time);
+    document.getElementById('window-1').classList.add('active');
+    document.getElementById('window-2').classList.remove('active');
+});
+document.getElementById('window-2').addEventListener('click', () => {
+    if (!currentResult || !currentResult.windows) return;
+    setEarthToTime(currentResult.windows[1].time);
+    document.getElementById('window-2').classList.add('active');
+    document.getElementById('window-1').classList.remove('active');
+});
+
+// View controls
+document.querySelectorAll('.view-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const view = btn.dataset.view;
+        switch(view) {
+            case 'default':
+                camera.position.set(20, 20, 30);
+                break;
+            case 'top':
+                camera.position.set(0, 45, 0.1);
+                break;
+            case 'side':
+                camera.position.set(40, 2, 0);
+                break;
+            case 'earth':
+                camera.position.set(3, 2, 3);
+                break;
+        }
+        controls.target.set(0, 0, 0);
+        controls.update();
+    });
+});
+
+// Toggle controls
+document.getElementById('show-ecliptic').addEventListener('change', (e) => {
+    eclipticPlane.visible = e.target.checked;
+    eclipticGridGroup.visible = e.target.checked;
+});
+document.getElementById('show-equator').addEventListener('change', (e) => {
+    equatorPlane.visible = e.target.checked;
+});
+document.getElementById('show-lunar-plane').addEventListener('change', (e) => {
+    lunarPlane.visible = e.target.checked;
+    lunarBorderLine.visible = e.target.checked;
+    moonOrbitLine.visible = e.target.checked;
+    lunarTrackLine.visible = e.target.checked;
+});
+document.getElementById('show-transfer').addEventListener('change', (e) => {
+    transferGroup.visible = e.target.checked;
+    parkingOrbitGroup.visible = e.target.checked;
+});
+document.getElementById('show-labels').addEventListener('change', (e) => {
+    earthLabel.visible = e.target.checked;
+    moonLabel.visible = e.target.checked;
+    moonGhostLabel.visible = e.target.checked;
+    siteLabel.visible = e.target.checked;
+    sunLabel.visible = e.target.checked;
+});
+document.getElementById('show-shadows').addEventListener('change', (e) => {
+    earthShadowGroup.visible = e.target.checked;
+    moonShadowGroup.visible = e.target.checked;
+});
+
+// ===== Resize =====
+function onResize() {
+    const w = viewport.clientWidth;
+    const h = viewport.clientHeight;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+}
+window.addEventListener('resize', onResize);
+
+// ===== Animation Loop =====
+function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+
+    renderer.render(scene, camera);
+}
+
+// ===== Init =====
+onResize();
+doCalculation();
+animate();
+
+</script>
+</body>
+</html>
