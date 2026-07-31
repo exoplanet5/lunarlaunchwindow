@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 env:
-  HF_SPACE: exoplanet5/lunar-launch-window
+  HF_SPACE: zhuoxiaowang/lunar-launch-window
 
 jobs:
   deploy:
