@@ -200,7 +200,7 @@ details.adv summary {
 
     <div class="control-group">
         <label>转移飞行时间 发射→近月 (天)</label>
-        <input type="range" id="transfer-time" min="3.0" max="6.0" step="0.05" value="4.70">
+        <input type="range" id="transfer-time" min="3.0" max="6.04" step="0.01" value="4.70">
         <div class="range-value" id="transfer-time-value">4.70 天 (112.8 h)</div>
     </div>
 
@@ -223,6 +223,24 @@ details.adv summary {
         <div>
             <label>最长滑行 (min)</label>
             <input type="number" id="max-coast" value="60" min="5" max="200" step="5">
+        </div>
+    </div>
+
+    <div class="control-group dual-input">
+        <div>
+            <label>月球引力修正 (四体打靶)</label>
+            <div style="margin-top:7px;display:flex;align-items:center;gap:6px">
+                <input type="checkbox" id="lunar-grav" checked>
+                <select id="bias-side" style="flex:1" title="近月点 B 面偏置在月球哪一侧: 决定 LOI 轨道面取向与窗口平移方向">
+                    <option value="0">偏置侧: 自动</option>
+                    <option value="1">偏置侧: + (射向偏大)</option>
+                    <option value="-1">偏置侧: − (射向偏小)</option>
+                </select>
+            </div>
+        </div>
+        <div>
+            <label>近月点目标 (km)</label>
+            <input type="number" id="peri-target" value="200" min="50" max="1000" step="10">
         </div>
     </div>
 
@@ -278,7 +296,8 @@ details.adv summary {
     <div id="viewport-overlay">鼠标拖拽旋转 | 滚轮缩放 | 右键平移</div>
     <div id="scheme-note">
         方案: 固定射向发射 → 200 km 停泊轨道滑行<br>
-        → 滑行至与"月球@到达"共面相位点 → TLI 点火入 LTO
+        → 滑行至与"月球@到达"共面相位点 → TLI 点火入 LTO<br>
+        月球引力修正开: 射向/能量按四体近月点打靶加偏置 (3D 仍绘二体 LTO)
     </div>
     <div id="timeline">
         <button id="tl-play" title="播放/暂停">▶</button>
@@ -333,6 +352,13 @@ details.adv summary {
     <div class="info-row"><span class="label">TLI ΔV</span><span class="value highlight" id="r-dv">--</span></div>
     <div class="info-row"><span class="label">C3</span><span class="value" id="r-c3">--</span></div>
     <div class="info-row"><span class="label">LTO面-白道面夹角</span><span class="value" id="r-gap">--</span></div>
+
+    <div class="panel-title">月球引力修正 (四体)</div>
+    <div class="info-row"><span class="label">射向偏置 ΔAz</span><span class="value highlight" id="r-bias">--</span></div>
+    <div class="info-row"><span class="label">滑行偏置 Δt_c</span><span class="value" id="r-dvp">--</span></div>
+    <div class="info-row"><span class="label">近月点高度 (校验)</span><span class="value" id="r-peri">--</span></div>
+    <div class="info-row"><span class="label">近月点时刻偏差</span><span class="value" id="r-perit">--</span></div>
+    <div class="info-row"><span class="label">若不修正 (二体瞄准)</span><span class="value" id="r-raw">--</span></div>
 
     <div class="panel-title">到达 · 月球</div>
     <div id="moon-phase-display">
@@ -600,23 +626,28 @@ function readParams() {
         thAscent: parseFloat(document.getElementById('ascent-arc').value) || 20,
         maxCoastSec: (parseFloat(document.getElementById('max-coast').value) || 60) * 60,
         azMin: parseFloat(document.getElementById('az-min').value),
-        azMax: parseFloat(document.getElementById('az-max').value)
+        azMax: parseFloat(document.getElementById('az-max').value),
+        periTarget: parseFloat(document.getElementById('peri-target').value) || 200,
+        lunarGrav: document.getElementById('lunar-grav').checked,
+        biasSide: parseInt(document.getElementById('bias-side').value) || 0
     };
 }
 
-// 扫描一天: 返回每个格点 {hUTC, az, feasible, sol, geo}
-function scanDay(jd0, site, transferDays, params, stepMin = 2) {
+// 扫描一天: 返回每个格点 {hUTC, az(实飞=二体+偏置), az2b, feasible, sol, geo}
+function scanDay(jd0, site, transferDays, params, azBias = 0, stepMin = 2) {
     const pts = [];
     for (let m = 0; m <= 1440; m += stepMin) {
         const jdL = jd0 + m / 1440;
         const geo = solveGeometry(jdL, site, transferDays);
-        const inCorr = geo.az >= params.azMin && geo.az <= params.azMax;
+        const azReal = mod360(geo.az + azBias);
+        const inCorr = azReal >= params.azMin && azReal <= params.azMax;
         let sol = null;
         if (inCorr) {
             const sols = coastSolutions(geo, { ...params, transferSec: transferDays * 86400 });
             sol = sols.length ? sols[0] : null;
         }
-        pts.push({ hUTC: m / 60, jdL, az: geo.az, geo, sol, feasible: inCorr && !!sol });
+        pts.push({ hUTC: m / 60, jdL, az: azReal, az2b: geo.az, geo, sol,
+                   feasible: inCorr && !!sol });
     }
     // 提取连续窗口
     const windows = [];
@@ -629,6 +660,260 @@ function scanDay(jd0, site, transferDays, params, stepMin = 2) {
     }
     if (cur) windows.push(cur);
     return { pts, windows };
+}
+
+/* =====================================================================
+ *  第二部分补充: 月球引力修正 (四体: 地 + 月 + 日 点质量, 地心系含间接项)
+ *
+ *  二体闭合把 LTO 瞄准 "月球@到达" 的质心方向, 忽略了月球引力对末段的
+ *  拉弯加速 — 实飞会提前数小时到达且近月点大幅偏低 (常见直接撞月)。
+ *  修正: 在同一发射几何上加 射向偏置 dAz 与 滑行时长偏置 dtc, 用 RK4
+ *  四体积分打靶, 使 近月点高度 = 目标值 且 近月点时刻 = 设定到达时刻。
+ *  窗口扫描采用 "窗口中心标定一次, 全天套用偏置": 偏置随发射时刻近似
+ *  常数, 表现为窗口整体平移 (宽度不变)。
+ * ===================================================================== */
+const MU_SUN = 1.32712440018e11;   // km^3/s^2
+const R_MOON = 1737.4;             // km
+const AU_KM = 1.495978707e8;
+
+function sunEqVec(jdUTC) {         // 太阳位置矢量 (km, 赤道系 of date)
+    const n = jdTT(jdUTC) - 2451545.0;
+    const L = mod360(280.460 + 0.9856474 * n);
+    const g = mod360(357.528 + 0.9856003 * n) * DEG;
+    const lam = mod360(L + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * DEG;
+    const r = (1.00014 - 0.01671 * Math.cos(g) - 0.00014 * Math.cos(2 * g)) * AU_KM;
+    return V.scale(eclToEq([Math.cos(lam), Math.sin(lam), 0], jdUTC), r);
+}
+
+// 历表: 均匀采样月/日位置 + Catmull-Rom 三次插值 (积分内上万次调用)
+function buildEph(jd0, jd1) {
+    const step = 0.02;
+    const n = Math.ceil((jd1 - jd0) / step) + 4;
+    const moonP = [], sunP = [];
+    for (let k = 0; k < n; k++) {
+        const jd = jd0 - step + k * step;
+        const m = moonEq(jd);
+        moonP.push(V.scale(m.u, m.dist));
+        sunP.push(sunEqVec(jd));
+    }
+    const interp = (arr, jd) => {
+        const x = (jd - (jd0 - step)) / step;
+        const i = Math.max(1, Math.min(arr.length - 3, Math.floor(x)));
+        const t = x - i, out = [0, 0, 0];
+        for (let c = 0; c < 3; c++) {
+            const p0 = arr[i - 1][c], p1 = arr[i][c],
+                  p2 = arr[i + 1][c], p3 = arr[i + 2][c];
+            out[c] = p1 + 0.5 * t * (p2 - p0 + t * (2*p0 - 5*p1 + 4*p2 - p3
+                     + t * (3 * (p1 - p2) + p3 - p0)));
+        }
+        return out;
+    };
+    return { moon: jd => interp(moonP, jd), sun: jd => interp(sunP, jd) };
+}
+
+function accel4b(jdRef, tSec, r, eph) {
+    const jd = jdRef + tSec / 86400;
+    const rm = eph.moon(jd), rs = eph.sun(jd);
+    const dm = V.sub(r, rm), ds = V.sub(r, rs);
+    const dR = V.norm(r), nm = V.norm(dm), nrm = V.norm(rm),
+          ns = V.norm(ds), nrs = V.norm(rs);
+    const cE = -MU / (dR*dR*dR), cM1 = -MU_MOON / (nm*nm*nm),
+          cM2 = -MU_MOON / (nrm*nrm*nrm), cS1 = -MU_SUN / (ns*ns*ns),
+          cS2 = -MU_SUN / (nrs*nrs*nrs);
+    return [cE*r[0] + cM1*dm[0] + cM2*rm[0] + cS1*ds[0] + cS2*rs[0],
+            cE*r[1] + cM1*dm[1] + cM2*rm[1] + cS1*ds[1] + cS2*rs[1],
+            cE*r[2] + cM1*dm[2] + cM2*rm[2] + cS1*ds[2] + cS2*rs[2]];
+}
+
+function rk4step(jdRef, t, y, h, eph) {
+    const f = (tt, yy) => {
+        const a = accel4b(jdRef, tt, [yy[0], yy[1], yy[2]], eph);
+        return [yy[3], yy[4], yy[5], a[0], a[1], a[2]];
+    };
+    const k1 = f(t, y);
+    const k2 = f(t + h/2, y.map((v, i) => v + h/2 * k1[i]));
+    const k3 = f(t + h/2, y.map((v, i) => v + h/2 * k2[i]));
+    const k4 = f(t + h, y.map((v, i) => v + h * k3[i]));
+    return y.map((v, i) => v + h/6 * (k1[i] + 2*k2[i] + 2*k3[i] + k4[i]));
+}
+
+function parabolaMinT(p0, p1, p2) {   // 三点 (t,d) 抛物线极小值位置
+    const a = ((p0[1] - p1[1]) / (p0[0] - p1[0])
+             - (p1[1] - p2[1]) / (p1[0] - p2[0])) / (p0[0] - p2[0]);
+    if (Math.abs(a) < 1e-15) return p1[0];
+    const b = (p0[1] - p1[1]) / (p0[0] - p1[0]) - a * (p0[0] + p1[0]);
+    return -b / (2 * a);
+}
+
+// 从 TLI 状态积分, 返回近月点 { tPeri (s, 自 jdRef), dPeri (月心距 km) }
+function propagateToPerilune(jdRef, y0, tEnd, eph) {
+    let t = 0, y = y0.slice();
+    const rec = [];
+    let best = [0, Infinity];
+    const dMoon = (tt, yy) => {
+        const rm = eph.moon(jdRef + tt / 86400);
+        return Math.hypot(yy[0]-rm[0], yy[1]-rm[1], yy[2]-rm[2]);
+    };
+    while (t < tEnd) {
+        const d = dMoon(t, y);
+        rec.push([t, d]);
+        if (rec.length > 3) rec.shift();
+        if (d < best[1]) best = [t, d];
+        if (rec.length === 3 && rec[1][1] < rec[0][1] && rec[1][1] <= rec[2][1]
+            && rec[1][1] < 60000) {
+            const tv = parabolaMinT(rec[0], rec[1], rec[2]);
+            const a = ((rec[0][1] - rec[1][1]) / (rec[0][0] - rec[1][0])
+                     - (rec[1][1] - rec[2][1]) / (rec[1][0] - rec[2][0]))
+                     / (rec[0][0] - rec[2][0]);
+            const dmin = rec[1][1] - a * (rec[1][0] - tv) * (rec[1][0] - tv);
+            return { tPeri: tv, dPeri: dmin };
+        }
+        const rE = Math.hypot(y[0], y[1], y[2]);
+        let h = rE < 20000 ? 10 : rE < 60000 ? 40 : 240;
+        if (d < 60000) h = Math.min(h, 30);
+        if (d < 25000) h = 15;
+        if (d < 8000) h = 5;
+        if (d < 2500) h = 2;
+        h = Math.min(h, tEnd - t);
+        y = rk4step(jdRef, t, y, h, eph);
+        t += h;
+    }
+    return { tPeri: best[0], dPeri: best[1] };
+}
+
+// 与 solveGeometry/coastSolutions 相同几何下的 TLI 状态 (射向加偏置 dAz)
+function tliStateBiased(geo, params, tcSec, vp, dAzDeg) {
+    const u1 = geo.u1;
+    const east = V.unit([-u1[1], u1[0], 0]);
+    const north = V.cross(u1, east);
+    const azr = (geo.az + dAzDeg) * DEG;
+    const vdir = V.add(V.scale(east, Math.sin(azr)), V.scale(north, Math.cos(azr)));
+    const n = V.unit(V.cross(u1, vdir));
+    const omPark = Math.sqrt(MU / (params.rp * params.rp * params.rp)) / DEG;
+    const ang = (params.thAscent + omPark * tcSec) * DEG;
+    const ehat = V.add(V.scale(u1, Math.cos(ang)),
+                       V.scale(V.cross(n, u1), Math.sin(ang)));
+    const phat = V.cross(n, ehat);
+    return [...V.scale(ehat, params.rp), ...V.scale(phat, vp)];
+}
+
+// 打靶: 解 (dAz, dtc) 使 四体近月点高度 = periTarget 且 近月点时刻 = jdA
+// 控制量: 射向偏置 dAz (横向→高度) + 滑行时长偏置 dtc (拱线相位→时刻)。
+// 不用 TLI 速度作时刻控制: 闭合解到达贴近远地点 (Δν≈180°), TOF 对能量
+// 单边奇异 (降能量即够不着月球); 滑行偏置的时刻杠杆平滑单调 (~6 h/min)。
+function lunarCorrection(geo, sol, params) {
+    const vp0 = Math.sqrt(MU * (2 / params.rp - 1 / sol.a));
+    const eph = buildEph(geo.jdL - 0.05, geo.jdA + 1.6);
+    const rTarget = R_MOON + (params.periTarget || 200);
+    const tcLo = -sol.coast, tcHi = params.maxCoastSec - sol.coast;
+    const F = (dAz, dtc) => {
+        const jdTLI = geo.jdL + (params.tAscent + sol.coast + dtc) / 86400;
+        const tofSec = (geo.jdA - jdTLI) * 86400;
+        const y0 = tliStateBiased(geo, params, sol.coast + dtc, vp0, dAz);
+        const p = propagateToPerilune(jdTLI, y0, tofSec + 1.5 * 86400, eph);
+        return { f0: p.dPeri - rTarget, f1: (p.tPeri - tofSec) / 3600, p };
+    };
+    const nrm = c => Math.hypot(c.f0 / 80, c.f1);   // 80 km ≈ 1 h 等权
+    const raw = F(0, 0);
+
+    // 时刻求解: 固定 dAz, 对 dtc 括号+二分 (f1 随 dtc 单调增, ~0.1 h/s)
+    const solveTime = (azFix, d0, c0) => {
+        if (Math.abs(c0.f1) < 0.04) return [d0, c0];
+        const dir = c0.f1 < 0 ? 1 : -1;          // 提前到达 → 加长滑行
+        let lo = d0, glo = c0.f1, hi = null, cl = c0;
+        for (const st of [30, 60, 120, 240, 480]) {
+            const d = Math.max(tcLo, Math.min(tcHi, d0 + dir * st));
+            const c = F(azFix, d);
+            if ((c.f1 < 0) !== (c0.f1 < 0)) { hi = d; cl = c; break; }
+            lo = d; glo = c.f1; cl = c;
+            if (d === tcLo || d === tcHi) break;
+        }
+        if (hi === null) return [lo, cl];
+        let bestD = hi, best = cl;
+        for (let k = 0; k < 9 && Math.abs(best.f1) > 0.04; k++) {
+            const dm = (lo + hi) / 2;
+            const cm = F(azFix, dm);
+            if ((cm.f1 < 0) === (glo < 0)) { lo = dm; glo = cm.f1; }
+            else hi = dm;
+            bestD = dm; best = cm;
+        }
+        return [bestD, best];
+    };
+
+    // 高度求解: 固定 dtc, 横向扫 dAz — "近月距-侧偏" 是 V 型褶皱, 不能盲用
+    // 2D 牛顿; 从中心向外找变号区间, 弦截细化; 双侧候选取时刻误差小的一侧
+    const solveAlt = (dtcFix, sidePref) => {
+        const cBase = F(0, dtcFix);
+        const refine = (aLo, cLo, aHi, cHi) => {
+            let lo = [aLo, cLo.f0], hi = [aHi, cHi.f0];
+            let cBest = cHi; cBest.dAz = aHi;
+            for (let k = 0; k < 7 && Math.abs(cBest.f0) > 20; k++) {
+                const am = lo[0] + (hi[0] - lo[0]) * lo[1] / (lo[1] - hi[1]);
+                const cm = F(am, dtcFix); cm.dAz = am;
+                cBest = cm;
+                if ((cm.f0 < 0) === (lo[1] < 0)) lo = [am, cm.f0];
+                else hi = [am, cm.f0];
+            }
+            return cBest;
+        };
+        const cands = [];
+        for (const sgn of (sidePref ? [sidePref] : [1, -1])) {
+            let prevA = 0, prevC = cBase;
+            for (const step of [0.35, 0.7, 1.1, 1.6, 2.3, 3.2]) {
+                const a = sgn * step;
+                const c = F(a, dtcFix);
+                if ((prevC.f0 < 0) !== (c.f0 < 0)) {
+                    const cb = refine(prevA, prevC, a, c);
+                    cb.side = sgn;
+                    cands.push(cb);
+                    break;
+                }
+                prevA = a; prevC = c;
+            }
+        }
+        if (!cands.length) { cBase.dAz = 0; cBase.side = 0; return cBase; }
+        cands.sort((p, q) => Math.abs(p.f1) - Math.abs(q.f1));
+        return cands[0];
+    };
+
+    // 两遍交替 (时刻↔高度弱耦合, 两遍即入抛光半径)
+    let [dtc, cT] = solveTime(0, 0, raw);
+    let cA = solveAlt(dtc, params.biasSide || 0);
+    let dAz = cA.dAz;
+    [dtc, cT] = solveTime(dAz, dtc, cA);
+    cA = solveAlt(dtc, cA.side || 0);
+    dAz = cA.dAz;
+    let x = [dAz, dtc], cur = cA;
+
+    // 抛光: 2×2 牛顿 (此时离褶皱已远, 小步差分 + 步长钳制)
+    let hA = 0.05, hT = 12, ok = false;
+    for (let it = 0; it < 5; it++) {
+        if (Math.abs(cur.f0) < 3 && Math.abs(cur.f1) < 0.02) { ok = true; break; }
+        const fA = F(x[0] + hA, x[1]), fT = F(x[0], x[1] + hT);
+        const J00 = (fA.f0 - cur.f0) / hA, J01 = (fT.f0 - cur.f0) / hT,
+              J10 = (fA.f1 - cur.f1) / hA, J11 = (fT.f1 - cur.f1) / hT;
+        const det = J00 * J11 - J01 * J10;
+        if (!isFinite(det) || Math.abs(det) < 1e-12) break;
+        let dxA = -( J11 * cur.f0 - J01 * cur.f1) / det;
+        let dxT = -(-J10 * cur.f0 + J00 * cur.f1) / det;
+        dxA = Math.max(-0.4, Math.min(0.4, dxA));
+        dxT = Math.max(-90, Math.min(90, dxT));
+        let lam = 1, nxt = null;
+        for (let k = 0; k < 3; k++) {
+            nxt = F(x[0] + lam * dxA, x[1] + lam * dxT);
+            if (nrm(nxt) < nrm(cur)) break;
+            lam /= 2;
+        }
+        x = [x[0] + lam * dxA, x[1] + lam * dxT];
+        cur = nxt;
+        hA = Math.max(0.015, hA * 0.5);
+        hT = Math.max(4, hT * 0.5);
+    }
+    if (!ok) ok = Math.abs(cur.f0) < 25 && Math.abs(cur.f1) < 0.15;
+    return { dAz: x[0], dtc: x[1],
+             periAlt: cur.p.dPeri - R_MOON, periDtH: cur.f1,
+             rawAlt: raw.p.dPeri - R_MOON, rawDtH: raw.f1,
+             converged: ok };
 }
 </script>
 
@@ -1185,7 +1470,35 @@ function calcDay() {
     const transferDays = parseFloat(document.getElementById('transfer-time').value);
     const params = readParams();
 
-    dayResult = { ...scanDay(jd0, site, transferDays, params), jd0, site, transferDays, params };
+    // 二体扫描 → (可选) 窗口中心四体标定射向偏置 → 带偏置重扫
+    let scan = scanDay(jd0, site, transferDays, params);
+    let corr = null, azBias = 0;
+    if (params.lunarGrav) {
+        let jdRefL;
+        if (scan.windows.length) {
+            const w = scan.windows.reduce((a, b) =>
+                (b.close - b.open) > (a.close - a.open) ? b : a);
+            jdRefL = jd0 + (w.open + w.close) / 2 / 24;
+        } else {
+            const mid = (params.azMin + params.azMax) / 2;
+            const p = scan.pts.reduce((a, b) =>
+                Math.abs(b.az2b - mid) < Math.abs(a.az2b - mid) ? b : a);
+            jdRefL = p.jdL;
+        }
+        const geoR = solveGeometry(jdRefL, site, transferDays);
+        const solsR = coastSolutions(geoR, { ...params, transferSec: transferDays * 86400 });
+        if (solsR.length) {
+            corr = lunarCorrection(geoR, solsR[0], params);
+            if (corr.converged) {
+                azBias = corr.dAz;
+                scan = scanDay(jd0, site, transferDays, params, azBias);
+            }
+        }
+    }
+    dayResult = { ...scan, jd0, site, transferDays, params, corr, azBias };
+    document.getElementById('chart-az-hint').textContent = (corr && corr.converged)
+        ? `曲线: 实飞射向 = 二体共面射向 ${azBias >= 0 ? '+' : ''}${azBias.toFixed(2)}° (月引力偏置, 窗口中心标定)`
+        : '曲线: 瞄准"月球@到达"共面所需射向';
     renderWindowList();
     if (dayResult.windows.length) selectInWindow(dayResult.windows[0], 0.5);
     else { selected = null; updateResultPanel(); updateScene3D(); }
@@ -1226,9 +1539,10 @@ function selectInWindow(w, frac) {
     const geo = solveGeometry(jdL, site, transferDays);
     const sols = coastSolutions(geo, { ...params, transferSec: transferDays * 86400 });
     if (!sols.length) return;
-    selected = { geo, sol: sols[0], params, site, transferDays, window: w };
+    selected = { geo, sol: sols[0], params, site, transferDays, window: w,
+                 azBias: dayResult.azBias, corr: dayResult.corr };
     document.getElementById('in-window-value').textContent =
-        `${fmtHM(hUTC, site.tz)} ${site.tzName} (射向 ${geo.az.toFixed(1)}°)`;
+        `${fmtHM(hUTC, site.tz)} ${site.tzName} (射向 ${mod360(geo.az + dayResult.azBias).toFixed(1)}°)`;
     const slider = document.getElementById('in-window');
     slider.value = Math.round(frac * 100);
     updateResultPanel();
@@ -1244,6 +1558,9 @@ function scanMonth() {
     const jdBase = julianDateUTC(Date.parse(dateStr + 'T00:00:00Z'));
     const transferDays = parseFloat(document.getElementById('transfer-time').value);
     const params = readParams();
+    // 月引力偏置: 沿用最近一次当日标定 (逐日重标定太慢; 偏置月内漂移 <0.5°)
+    const azBias = (params.lunarGrav && dayResult && dayResult.corr
+                    && dayResult.corr.converged) ? dayResult.azBias : 0;
     monthDays = [];
     for (let d = 0; d < 30; d++) {
         const jd0 = jdBase + d;
@@ -1251,7 +1568,8 @@ function scanMonth() {
         let minutes = 0;
         for (let m = 0; m < 1440; m += 5) {
             const geo = solveGeometry(jd0 + m / 1440, site, transferDays);
-            if (geo.az >= params.azMin && geo.az <= params.azMax) {
+            const azReal = mod360(geo.az + azBias);
+            if (azReal >= params.azMin && azReal <= params.azMax) {
                 const sols = coastSolutions(geo, { ...params, transferSec: transferDays * 86400 });
                 if (sols.length) minutes += 5;
             }
@@ -1273,18 +1591,22 @@ function updateResultPanel() {
     const q = id => document.getElementById(id);
     if (!selected) {
         ['r-launch','r-az','r-coast','r-tli','r-dnu','r-inc','r-raan','r-ecc',
-         'r-apo','r-dv','r-c3','r-gap','r-arrival','r-mdec','r-mdist','r-minc']
+         'r-apo','r-dv','r-c3','r-gap','r-arrival','r-mdec','r-mdist','r-minc',
+         'r-bias','r-dvp','r-peri','r-perit','r-raw']
             .forEach(id => q(id).textContent = '--');
         return;
     }
     const { geo, sol, site, params } = selected;
+    const corr = selected.corr, azBias = selected.azBias || 0;
+    const corrOn = corr && corr.converged;
     const nMoon = moonPlaneNormal(geo.jdA);
     const gap = Math.acos(Math.max(-1, Math.min(1, V.dot(geo.n, nMoon)))) / DEG;
     const iMoon = Math.acos(nMoon[2]) / DEG;
     q('r-launch').textContent = fmtJD(geo.jdL, site.tz) + ' ' + site.tzName;
-    q('r-az').textContent = geo.az.toFixed(2) + '°';
-    q('r-coast').textContent = (sol.coast / 60).toFixed(1) + ' min';
-    const jdTLI = geo.jdL + (params.tAscent + sol.coast) / 86400;
+    q('r-az').textContent = mod360(geo.az + azBias).toFixed(2) + '°';
+    const coastEff = sol.coast + (corrOn ? corr.dtc : 0);
+    q('r-coast').textContent = (coastEff / 60).toFixed(1) + ' min';
+    const jdTLI = geo.jdL + (params.tAscent + coastEff) / 86400;
     q('r-tli').textContent = fmtJD(jdTLI, site.tz) + ' ' + site.tzName;
     q('r-dnu').textContent = sol.dnu.toFixed(1) + '°';
     q('r-inc').textContent = geo.inc.toFixed(2) + '°';
@@ -1298,6 +1620,25 @@ function updateResultPanel() {
     q('r-mdec').textContent = geo.moonDec.toFixed(2) + '°';
     q('r-mdist').textContent = Math.round(geo.moonDist).toLocaleString() + ' km';
     q('r-minc').textContent = iMoon.toFixed(2) + '°';
+
+    // 月球引力修正面板
+    if (corrOn) {
+        q('r-bias').textContent = (corr.dAz >= 0 ? '+' : '') + corr.dAz.toFixed(2) + '°';
+        q('r-dvp').textContent = (corr.dtc >= 0 ? '+' : '') + corr.dtc.toFixed(0) + ' s';
+        q('r-peri').textContent = `${Math.round(corr.periAlt)} km (标定点)`;
+        q('r-perit').textContent = `${(corr.periDtH * 60).toFixed(0)} min`;
+        const rawA = corr.rawAlt < 0 ? '撞月'
+            : `近月点 ${Math.round(corr.rawAlt).toLocaleString()} km`;
+        const rawT = corr.rawDtH <= 0 ? `提前 ${(-corr.rawDtH).toFixed(1)} h`
+            : `滞后 ${corr.rawDtH.toFixed(1)} h`;
+        q('r-raw').textContent = `${rawA} · ${rawT}`;
+    } else if (params.lunarGrav) {
+        ['r-bias','r-dvp','r-peri','r-perit','r-raw']
+            .forEach(id => q(id).textContent = '未收敛');
+    } else {
+        ['r-bias','r-dvp','r-peri','r-perit','r-raw']
+            .forEach(id => q(id).textContent = '关');
+    }
 
     // 月相 @到达
     const mA = moonEcliptic(geo.jdA);
@@ -1563,7 +1904,8 @@ document.getElementById('transfer-time').addEventListener('input', e => {
         `${d.toFixed(2)} 天 (${(d * 24).toFixed(1)} h)`;
 });
 document.getElementById('transfer-time').addEventListener('change', calcDay);
-['launch-date','parking-alt','max-coast','ascent-time','ascent-arc'].forEach(id =>
+['launch-date','parking-alt','max-coast','ascent-time','ascent-arc',
+ 'peri-target','lunar-grav','bias-side'].forEach(id =>
     document.getElementById(id).addEventListener('change', calcDay));
 
 document.getElementById('in-window').addEventListener('input', e => {
