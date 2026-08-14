@@ -222,7 +222,7 @@ details.adv summary {
         </div>
         <div>
             <label>最长滑行 (min)</label>
-            <input type="number" id="max-coast" value="60" min="5" max="200" step="5">
+            <input type="number" id="max-coast" value="20" min="5" max="200" step="5">
         </div>
     </div>
 
@@ -240,7 +240,7 @@ details.adv summary {
         </div>
         <div>
             <label>近月点目标 (km)</label>
-            <input type="number" id="peri-target" value="200" min="50" max="1000" step="10">
+            <input type="number" id="peri-target" value="150" min="50" max="1000" step="10">
         </div>
     </div>
 
@@ -624,10 +624,10 @@ function readParams() {
         rp: R_MEAN + rpAlt,
         tAscent: parseFloat(document.getElementById('ascent-time').value) || 800,
         thAscent: parseFloat(document.getElementById('ascent-arc').value) || 20,
-        maxCoastSec: (parseFloat(document.getElementById('max-coast').value) || 60) * 60,
+        maxCoastSec: (parseFloat(document.getElementById('max-coast').value) || 20) * 60,
         azMin: parseFloat(document.getElementById('az-min').value),
         azMax: parseFloat(document.getElementById('az-max').value),
-        periTarget: parseFloat(document.getElementById('peri-target').value) || 200,
+        periTarget: parseFloat(document.getElementById('peri-target').value) || 150,
         lunarGrav: document.getElementById('lunar-grav').checked,
         biasSide: parseInt(document.getElementById('bias-side').value) || 0
     };
@@ -804,7 +804,7 @@ function tliStateBiased(geo, params, tcSec, vp, dAzDeg) {
 function lunarCorrection(geo, sol, params) {
     const vp0 = Math.sqrt(MU * (2 / params.rp - 1 / sol.a));
     const eph = buildEph(geo.jdL - 0.05, geo.jdA + 1.6);
-    const rTarget = R_MOON + (params.periTarget || 200);
+    const rTarget = R_MOON + (params.periTarget || 150);
     const tcLo = -sol.coast, tcHi = params.maxCoastSec - sol.coast;
     const F = (dAz, dtc) => {
         const jdTLI = geo.jdL + (params.tAscent + sol.coast + dtc) / 86400;
@@ -847,8 +847,10 @@ function lunarCorrection(geo, sol, params) {
         const refine = (aLo, cLo, aHi, cHi) => {
             let lo = [aLo, cLo.f0], hi = [aHi, cHi.f0];
             let cBest = cHi; cBest.dAz = aHi;
-            for (let k = 0; k < 7 && Math.abs(cBest.f0) > 20; k++) {
-                const am = lo[0] + (hi[0] - lo[0]) * lo[1] / (lo[1] - hi[1]);
+            for (let k = 0; k < 18 && Math.abs(cBest.f0) > 20; k++) {
+                // 弦截在陡峭 V 壁上会单侧停滞, 隔次退化为二分保证收缩
+                const am = (k % 2 === 1) ? (lo[0] + hi[0]) / 2
+                    : lo[0] + (hi[0] - lo[0]) * lo[1] / (lo[1] - hi[1]);
                 const cm = F(am, dtcFix); cm.dAz = am;
                 cBest = cm;
                 if ((cm.f0 < 0) === (lo[1] < 0)) lo = [am, cm.f0];
@@ -859,7 +861,7 @@ function lunarCorrection(geo, sol, params) {
         const cands = [];
         for (const sgn of (sidePref ? [sidePref] : [1, -1])) {
             let prevA = 0, prevC = cBase;
-            for (const step of [0.35, 0.7, 1.1, 1.6, 2.3, 3.2]) {
+            for (const step of [0.35, 0.7, 1.1, 1.6, 2.3, 3.2, 4.5, 6.3]) {
                 const a = sgn * step;
                 const c = F(a, dtcFix);
                 if ((prevC.f0 < 0) !== (c.f0 < 0)) {
@@ -885,9 +887,10 @@ function lunarCorrection(geo, sol, params) {
     dAz = cA.dAz;
     let x = [dAz, dtc], cur = cA;
 
-    // 抛光: 2×2 牛顿 (此时离褶皱已远, 小步差分 + 步长钳制)
+    // 抛光: 2×2 牛顿 (小步差分 + 步长钳制)。迭代预算需覆盖交替环节
+    // 未启动的情形 (solveAlt 切片上无变号时, 牛顿从 dAz=0 以 0.4°/步爬行)
     let hA = 0.05, hT = 12, ok = false;
-    for (let it = 0; it < 5; it++) {
+    for (let it = 0; it < 12; it++) {
         if (Math.abs(cur.f0) < 3 && Math.abs(cur.f1) < 0.02) { ok = true; break; }
         const fA = F(x[0] + hA, x[1]), fT = F(x[0], x[1] + hT);
         const J00 = (fA.f0 - cur.f0) / hA, J01 = (fT.f0 - cur.f0) / hT,
